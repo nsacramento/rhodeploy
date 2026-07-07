@@ -124,7 +124,7 @@ def _wx_block(icao, assess, comms):
     if tc is not None:
         t_str = f"{tc}°C"
         if dc is not None:
-            spread = tc - dc
+            spread = round(tc - dc, 1)
             t_str += f"  /  Dew {dc}°C  (T/D {spread}°C)"
         rows.append(("Temp", t_str))
 

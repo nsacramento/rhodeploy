@@ -699,7 +699,7 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d):
                 spread = ""
                 if assess.get("dewpoint_c") is not None:
                     spread = f" &nbsp;|&nbsp; Dewpoint {assess['dewpoint_c']}&deg;C"
-                    t_d = assess["temp_c"] - assess["dewpoint_c"]
+                    t_d = round(assess["temp_c"] - assess["dewpoint_c"], 1)
                     spread += f" &nbsp;|&nbsp; T/D spread {t_d}&deg;C"
                 rows.append(("Temp", f"{assess['temp_c']}&deg;C{spread}"))
             if assess.get("altimeter"):
@@ -1047,7 +1047,7 @@ def _interpret_metar(assess):
         tc_f = round(tc * 9 / 5 + 32)
         if dc is not None:
             dc_f = round(dc * 9 / 5 + 32)
-            spread = tc - dc
+            spread = round(tc - dc, 1)
             spread_note = (
                 "spread very tight — fog or low cloud likely"
                 if spread <= 2 else
