@@ -1,0 +1,8 @@
+streamlit
+supabase
+pandas
+matplotlib
+shapely
+contextily
+reportlab
+requests
