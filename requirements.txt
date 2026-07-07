@@ -6,3 +6,4 @@ shapely
 contextily
 reportlab
 requests
+python-dotenv
