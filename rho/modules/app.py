@@ -54,6 +54,37 @@ h2, h3 { color: #1a1a2e; font-weight: 600; }
     font-weight: 500;
 }
 
+/* ── GO button — green ── */
+button[data-testid="baseButton-primary"] {
+    background-color: #15803d !important;
+    border-color: #15803d !important;
+    color: white !important;
+}
+button[data-testid="baseButton-primary"]:hover {
+    background-color: #166534 !important;
+    border-color: #166534 !important;
+}
+
+/* ── NO-GO button — red ──
+   Targets a secondary button in the last (2nd) column of a 2-column layout.
+   nth-child(2):last-child ensures exactly 2 columns (not nav bars with more). */
+[data-testid="stColumn"]:nth-child(2):last-child button[data-testid="baseButton-secondary"] {
+    background-color: #991b1b !important;
+    border-color: #991b1b !important;
+    color: white !important;
+}
+[data-testid="stColumn"]:nth-child(2):last-child button[data-testid="baseButton-secondary"]:hover {
+    background-color: #7f1d1d !important;
+    border-color: #7f1d1d !important;
+}
+
+/* ── Login page — aviation sky gradient ── */
+.rho-login-page [data-testid="stAppViewContainer"],
+.rho-login-bg {
+    background: linear-gradient(160deg, #0a1628 0%, #1a3a5c 40%, #1e6091 70%, #5ba3d4 100%) !important;
+    min-height: 100vh;
+}
+
 /* Table */
 table { border-collapse: collapse; width: 100%; font-size: 12px; font-family: 'Inter', sans-serif; }
 th { background: #1a1a2e; color: white; padding: 6px 8px; text-align: center; font-weight: 500; }
@@ -211,10 +242,55 @@ def airport_selector(label_state, label_airport, key_state, key_apt,
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def show_auth():
+    # Aviation sky background
+    st.markdown("""
+    <style>
+    [data-testid="stAppViewContainer"] {
+        background: linear-gradient(160deg, #0a1628 0%, #0d2a4a 35%, #1a4f7a 65%, #4a90c4 100%) !important;
+    }
+    [data-testid="stMain"] { background: transparent !important; }
+    [data-testid="stBottom"] { background: transparent !important; }
+    .rho-login-card {
+        background: rgba(255,255,255,0.95);
+        border-radius: 16px;
+        padding: 2rem 2.5rem 2.5rem;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        backdrop-filter: blur(10px);
+    }
+    .rho-login-header {
+        text-align: center;
+        margin-bottom: 0.25rem;
+    }
+    .rho-login-logo {
+        font-size: 3rem;
+        line-height: 1;
+        margin-bottom: 0.25rem;
+    }
+    .rho-login-title {
+        font-size: 2rem;
+        font-weight: 800;
+        color: #0a1628;
+        letter-spacing: -0.5px;
+        margin: 0;
+    }
+    .rho-login-tagline {
+        font-size: 0.9rem;
+        color: #4a6fa5;
+        margin: 0.15rem 0 0;
+        font-style: italic;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     col = st.columns([1, 2, 1])[1]
     with col:
-        st.markdown("## Rho")
-        st.markdown("*Student Pilot Co-Pilot — KSRQ*")
+        st.markdown("""
+        <div class="rho-login-header">
+            <div class="rho-login-logo">✈</div>
+            <p class="rho-login-title">Rho</p>
+            <p class="rho-login-tagline">Student Pilot Co-Pilot · VFR Flight Planning</p>
+        </div>
+        """, unsafe_allow_html=True)
         st.divider()
         tab_in, tab_up = st.tabs(["Sign In", "Create Account"])
         with tab_in:
