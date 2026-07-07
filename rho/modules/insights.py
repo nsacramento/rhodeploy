@@ -156,10 +156,10 @@ def _assess_wx(wx_brief, apt=None):
     if not category:
         category = _derive_category(ceiling_ft, visibility)
 
-    # Best runway crosswind
+    # Best runway crosswind (run even with calm winds so runway always shows)
     crosswind_kt = None
     best_runway  = None
-    if apt and wind_dir is not None and wind_kt:
+    if apt and wind_dir is not None:
         crosswind_kt, best_runway = _best_runway_crosswind(
             apt.get("runways") or [], wind_dir, wind_kt
         )
