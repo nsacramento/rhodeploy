@@ -42,17 +42,26 @@ header[data-testid="stHeader"] { display: none; }
 }
 
 /* ── Selectbox / dropdown contrast ─────────────────────────────────────── */
-/* box-shadow as border so inline styles can't override it */
+/* outline is not clipped by parent overflow:hidden, unlike border/box-shadow */
 [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
 [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
-    box-shadow: 0 0 0 1.5px #94a3b8 !important;
+    outline: 1.5px solid #94a3b8 !important;
+    outline-offset: -1px !important;
     border-radius: 6px !important;
     background-color: #ffffff !important;
 }
-/* Fallback broader selector */
-div[data-baseweb="select"] > div {
-    box-shadow: 0 0 0 1.5px #94a3b8 !important;
+/* White background on the select wrapper itself */
+[data-testid="stSelectbox"] div[data-baseweb="select"],
+[data-testid="stMultiSelect"] div[data-baseweb="select"] {
     background-color: #ffffff !important;
+    border-radius: 6px !important;
+}
+/* Broader fallback targeting the inner value container */
+div[data-baseweb="select"] > div {
+    outline: 1.5px solid #94a3b8 !important;
+    outline-offset: -1px !important;
+    background-color: #ffffff !important;
+    border-radius: 6px !important;
 }
 
 /* ── Login tab colors (dark bg) — overridden to white in show_auth() ──── */
@@ -472,22 +481,23 @@ def show_nav():
                 st.session_state[k] = False if k == "authenticated" else None
             st.rerun()
 
-    # ── Nav strip ─────────────────────────────────────────────────────────────
-    nav_cols = st.columns(len(pages))
-    for col, (label, key) in zip(nav_cols, pages):
-        with col:
-            active = st.session_state.current_page == key
-            # Thin dark bar above the active page button
-            st.markdown(
-                "<div style='height:3px;background:"
-                + ("#1e293b" if active else "transparent")
-                + ";border-radius:2px;margin-bottom:2px;'></div>",
-                unsafe_allow_html=True,
-            )
-            if st.button(label, key=f"nav_{key}", use_container_width=True,
-                         type="secondary"):
-                st.session_state.current_page = key
-                st.rerun()
+    # ── Nav strip — segmented control ────────────────────────────────────────
+    page_labels = [label for label, _ in pages]
+    page_keys   = [key   for _, key   in pages]
+    current_label = next(
+        (label for label, key in pages if key == st.session_state.current_page),
+        page_labels[0],
+    )
+    # Key changes with current page so control always reflects programmatic nav changes
+    selected = st.segmented_control(
+        "nav", page_labels,
+        default=current_label,
+        key=f"_nav_{current_label}",
+        label_visibility="collapsed",
+    )
+    if selected and selected != current_label:
+        st.session_state.current_page = page_keys[page_labels.index(selected)]
+        st.rerun()
 
     # ── Profile missing banner ────────────────────────────────────────────────
     if st.session_state.user_role is None:
