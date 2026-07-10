@@ -31,6 +31,21 @@ st.markdown("""
 header[data-testid="stHeader"] { display: none; }
 [data-testid="stToolbar"] { display: none; }
 
+/* Sidebar re-open button — make it obvious when sidebar is collapsed */
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 2rem !important;
+    height: 2rem !important;
+    background: #1e293b !important;
+    border-radius: 0 6px 6px 0 !important;
+    color: white !important;
+    opacity: 1 !important;
+    top: 1rem !important;
+}
+[data-testid="collapsedControl"] svg { color: white !important; fill: white !important; }
+
 /* Sidebar nav button polish */
 [data-testid="stSidebar"] [data-testid="stButton"] button {
     border-radius: 6px;
