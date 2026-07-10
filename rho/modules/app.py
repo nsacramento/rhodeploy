@@ -42,19 +42,17 @@ header[data-testid="stHeader"] { display: none; }
 }
 
 /* ── Selectbox / dropdown contrast ─────────────────────────────────────── */
-/* Border on the OUTER wrapper — the inner control has overflow:hidden which
-   clips border/box-shadow/outline. The wrapper is above the clipping layer. */
-[data-testid="stSelectbox"] [data-baseweb="select"],
-[data-testid="stMultiSelect"] [data-baseweb="select"] {
+/* Streamlit now uses React ARIA (not BaseWeb) for selectboxes.
+   Target the role="group" div which wraps the visible input + arrow button. */
+[data-testid="stSelectbox"] [role="group"],
+[data-testid="stMultiSelect"] [role="group"] {
     border: 1.5px solid #94a3b8 !important;
     border-radius: 6px !important;
     background-color: #ffffff !important;
 }
-/* White fill on inner control too */
-[data-testid="stSelectbox"] [data-baseweb="select"] > div,
-[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+[data-testid="stSelectbox"] input[role="combobox"],
+[data-testid="stMultiSelect"] input[role="combobox"] {
     background-color: #ffffff !important;
-    border: none !important;
 }
 
 /* ── Login tab colors (dark bg) — overridden to white in show_auth() ──── */
