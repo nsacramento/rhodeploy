@@ -42,26 +42,19 @@ header[data-testid="stHeader"] { display: none; }
 }
 
 /* ── Selectbox / dropdown contrast ─────────────────────────────────────── */
-/* outline is not clipped by parent overflow:hidden, unlike border/box-shadow */
-[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
-[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
-    outline: 1.5px solid #94a3b8 !important;
-    outline-offset: -1px !important;
+/* Border on the OUTER wrapper — the inner control has overflow:hidden which
+   clips border/box-shadow/outline. The wrapper is above the clipping layer. */
+[data-testid="stSelectbox"] [data-baseweb="select"],
+[data-testid="stMultiSelect"] [data-baseweb="select"] {
+    border: 1.5px solid #94a3b8 !important;
     border-radius: 6px !important;
     background-color: #ffffff !important;
 }
-/* White background on the select wrapper itself */
-[data-testid="stSelectbox"] div[data-baseweb="select"],
-[data-testid="stMultiSelect"] div[data-baseweb="select"] {
+/* White fill on inner control too */
+[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
     background-color: #ffffff !important;
-    border-radius: 6px !important;
-}
-/* Broader fallback targeting the inner value container */
-div[data-baseweb="select"] > div {
-    outline: 1.5px solid #94a3b8 !important;
-    outline-offset: -1px !important;
-    background-color: #ffffff !important;
-    border-radius: 6px !important;
+    border: none !important;
 }
 
 /* ── Login tab colors (dark bg) — overridden to white in show_auth() ──── */
