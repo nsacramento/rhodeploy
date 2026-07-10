@@ -78,6 +78,14 @@ def _rating_color(rating):
     return {3: _GREEN, 2: _YELLOW, 1: _RED}.get(rating, _SLATE)
 
 
+# Literal hex strings for inline ReportLab <font color="..."> tags.
+# Do NOT use Color.hexval() — it returns '0xRRGGBBFF' format, not '#RRGGBB'.
+_RATING_HEX = {3: "#15803d", 2: "#b45309", 1: "#991b1b"}
+
+def _rating_hex(rating):
+    return _RATING_HEX.get(rating, "#475569")
+
+
 def _rating_label(rating):
     return {3: "Met Standard", 2: "Needs Work", 1: "Below Std", None: "Not Practiced"}.get(rating, "—")
 
@@ -205,12 +213,11 @@ def generate_readiness_report(latest_per_task, stats, pilot_name=None,
         ]]
         for tid in task_ids:
             rating = latest_per_task.get(tid)
-            r_clr  = _rating_color(rating)
             r_lbl  = _rating_label(rating)
             task_rows.append([
                 Paragraph(tid, _CELL),
                 Paragraph(ACS_TASKS[tid]["name"], _CELL),
-                Paragraph(f'<font color="#{r_clr.hexval()[1:]}">'
+                Paragraph(f'<font color="{_rating_hex(rating)}">'
                           f'<b>{r_lbl}</b></font>', _CELL),
                 Paragraph("_" * 30, _NOTE),
             ])
@@ -515,11 +522,10 @@ def generate_lesson_plan(plan, latest_per_task, n_lessons=3, pilot_name=None,
         for tid in lesson_tasks:
             rating = latest_per_task.get(tid)
             r_lbl  = _rating_label(rating)
-            r_clr  = _rating_color(rating)
             task_data.append([
                 Paragraph(tid, _CELL),
                 Paragraph(ACS_TASKS[tid]["name"], _CELL),
-                Paragraph(f'<font color="#{r_clr.hexval()[1:]}">{r_lbl}</font>', _CELL),
+                Paragraph(f'<font color="{_rating_hex(rating)}">{r_lbl}</font>', _CELL),
                 Paragraph("Met Standard", _CELL),
                 Paragraph("______________", _NOTE),
             ])

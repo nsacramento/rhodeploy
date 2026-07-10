@@ -22,18 +22,23 @@ st.set_page_config(
     page_title="Rho — Student Pilot Co-Pilot",
     page_icon="✈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # ── Global styles ─────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-[data-testid="collapsedControl"] { display: none; }
 header[data-testid="stHeader"] { display: none; }
 [data-testid="stToolbar"] { display: none; }
 
-/* Nav bar */
-.nav-bar { display: flex; gap: 4px; margin-bottom: 1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+/* Sidebar nav button polish */
+[data-testid="stSidebar"] [data-testid="stButton"] button {
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-align: left !important;
+    justify-content: flex-start !important;
+}
 
 /* Section headers */
 h2, h3 { color: #1a1a2e; font-weight: 600; }
@@ -157,8 +162,11 @@ for key, default in [
     ("acs_editing_flight",    None),   # flight_id currently open in the inline ACS editor
     ("instr_student_id",      None),   # instructor dashboard: selected student
     ("generated_invite_link", None),   # persisted invite link so it survives reruns
+    ("invite_email",          ""),     # email typed into instructor invite input
     ("aircraft_type",         None),   # default aircraft type key (e.g. 'c172s')
     ("aircraft_tail",         None),   # default tail number (e.g. 'N12345')
+    ("feedback_ids",          None),   # list of unique feedback entry IDs (int)
+    ("feedback_next_id",      0),      # counter for next feedback entry ID
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -249,6 +257,19 @@ def airport_selector(label_state, label_airport, key_state, key_apt,
         return st.text_input(label_airport, value=default_icao or "", key=key_apt).upper().strip()
 
 
+# ── Shared helpers ────────────────────────────────────────────────────────────
+
+def _progress_html(pct, color="#15803d"):
+    """Dark, high-contrast progress bar (replaces Streamlit's light-on-light default)."""
+    w = max(0.0, min(1.0, float(pct))) * 100
+    return (
+        "<div style='background:#cbd5e1;border-radius:4px;height:8px;"
+        "overflow:hidden;margin:4px 0 12px;'>"
+        "<div style='width:" + f"{w:.1f}" + "%;background:" + color + ";height:100%;"
+        "border-radius:4px;'></div></div>"
+    )
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def show_auth():
@@ -268,9 +289,13 @@ def show_auth():
     [data-testid="stTextInput"] label,
     [data-testid="stSelectbox"] label,
     [data-testid="stForm"] label { color: rgba(255,255,255,0.9) !important; }
-    /* Tab text */
-    [data-baseweb="tab"] { color: rgba(255,255,255,0.75) !important; }
-    [aria-selected="true"][data-baseweb="tab"] { color: #ffffff !important; }
+    /* Tab text — tabs render on the white card, so use dark text */
+    [data-baseweb="tab"] { color: #64748b !important; font-weight: 500 !important; }
+    [aria-selected="true"][data-baseweb="tab"] {
+        color: #1e3a8a !important;
+        font-weight: 700 !important;
+        border-bottom: 3px solid #1e3a8a !important;
+    }
     .rho-login-card {
         background: rgba(255,255,255,0.95);
         border-radius: 16px;
@@ -359,55 +384,68 @@ def show_nav():
         try:
             prof = get_profile()
             if prof:
-                st.session_state.user_role    = prof.get("role", "student")
-                st.session_state.user_name    = prof.get("full_name") or st.session_state.user_email
+                st.session_state.user_role     = prof.get("role", "student")
+                st.session_state.user_name     = prof.get("full_name") or st.session_state.user_email
                 st.session_state.aircraft_type = prof.get("aircraft_type")
                 st.session_state.aircraft_tail = prof.get("tail_number")
         except Exception:
             pass
 
-    h_left, h_right = st.columns([6, 2])
-    with h_left:
-        name_display = st.session_state.user_name or st.session_state.user_email or "Pilot"
-        role_badge = st.session_state.user_role or "student"
+    name_display = st.session_state.user_name or st.session_state.user_email or "Pilot"
+    role_display = (st.session_state.user_role or "student").capitalize()
+
+    # ── Sidebar ───────────────────────────────────────────────────────────────
+    with st.sidebar:
         st.markdown(
-            f"**Pilot** — {name_display}<br>"
-            f"<span style='font-size:0.85rem;color:#6b7280'>Co-Pilot — Rho</span>",
-            unsafe_allow_html=True)
-    with h_right:
-        role_badge = st.session_state.user_role or "student"
-        st.caption(f"{name_display}  ·  {role_badge}")
-        if st.button("Sign Out", key="signout", use_container_width=True):
-            sign_out()
-            for k in ("authenticated", "user_email", "user_role", "user_name",
-                      "last_brief", "pending_skills_flight", "instr_student_id",
-                      "aircraft_type", "aircraft_tail"):
-                st.session_state[k] = False if k == "authenticated" else None
-            st.rerun()
+            "<div style='text-align:center;padding:6px 0 14px;'>"
+            "<div style='font-size:2rem;line-height:1;'>✈</div>"
+            "<div style='font-weight:800;font-size:1.25rem;color:#1e293b;letter-spacing:-0.5px;'>Rho</div>"
+            "<div style='font-size:0.72rem;color:#64748b;'>Student Pilot Co-Pilot</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
-    pages = [
-        ("Home",             "home"),
-        ("Pre-Flight Brief", "preflight"),
-        ("Flight Log",       "logbook"),
-        ("ACS Skills",       "skills"),
-        ("Tools",            "tools"),
-        ("Profile",          "profile"),
-        ("📖 Guide",          "guide"),
-        ("💬 Feedback",       "feedback"),
-    ]
-    if st.session_state.user_role == "instructor":
-        pages.append(("Students", "instructor"))
+        st.markdown(
+            f"<div style='background:#f1f5f9;border-radius:8px;padding:8px 12px;margin-bottom:10px;'>"
+            f"<div style='font-size:0.75rem;color:#94a3b8;margin-bottom:1px;'>Signed in as</div>"
+            f"<div style='font-weight:600;font-size:0.88rem;color:#1e293b;'>{name_display}</div>"
+            f"<div style='font-size:0.75rem;color:#64748b;'>{role_display}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
-    cols = st.columns(len(pages))
-    for col, (label, key) in zip(cols, pages):
-        with col:
+        pages = [
+            ("Home",             "home"),
+            ("Pre-Flight Brief", "preflight"),
+            ("Flight Log",       "logbook"),
+            ("ACS Skills",       "skills"),
+            ("Tools",            "tools"),
+            ("Profile",          "profile"),
+            ("Guide",            "guide"),
+            ("Feedback",         "feedback"),
+        ]
+        if st.session_state.user_role == "instructor":
+            pages.append(("Students", "instructor"))
+
+        for label, key in pages:
             active = st.session_state.current_page == key
             if st.button(label, key=f"nav_{key}", use_container_width=True,
                          type="primary" if active else "secondary"):
                 st.session_state.current_page = key
                 st.rerun()
 
-    # Profile missing banner (existing users pre-profile system)
+        st.markdown("<div style='margin-top:auto;'></div>", unsafe_allow_html=True)
+        st.markdown("---")
+        if st.button("Sign Out", key="signout", use_container_width=True):
+            sign_out()
+            for k in ("authenticated", "user_email", "user_role", "user_name",
+                      "last_brief", "pending_skills_flight", "instr_student_id",
+                      "aircraft_type", "aircraft_tail", "generated_invite_link",
+                      "invite_email", "feedback_ids"):
+                st.session_state[k] = False if k == "authenticated" else None
+            st.rerun()
+
+    # ── Profile missing banner (main area) ───────────────────────────────────
     if st.session_state.user_role is None:
         col_pmsg, col_pbtn = st.columns([5, 1])
         with col_pmsg:
@@ -417,7 +455,7 @@ def show_nav():
                 st.session_state.current_page = "profile"
                 st.rerun()
 
-    # Active flight banner
+    # ── Active flight banner (main area) ─────────────────────────────────────
     try:
         active_flights = get_active_flights()
     except Exception:
@@ -436,7 +474,6 @@ def show_nav():
                 st.session_state.current_page = "logbook"
                 st.rerun()
 
-    st.divider()
     return st.session_state.current_page
 
 
@@ -469,15 +506,15 @@ def page_home():
         with c1:
             pct_t = min(total_hrs / 40.0, 1.0)
             st.metric("Total Hours", f"{total_hrs:.1f} / 40")
-            st.progress(pct_t)
+            st.markdown(_progress_html(pct_t), unsafe_allow_html=True)
         with c2:
             pct_s = min(solo_hrs / 10.0, 1.0)
             st.metric("Solo Hours", f"{solo_hrs:.1f} / 10")
-            st.progress(pct_s)
+            st.markdown(_progress_html(pct_s, "#0284c7"), unsafe_allow_html=True)
         with c3:
             pct_d = min(dual_hrs / 20.0, 1.0)
             st.metric("Dual Hours", f"{dual_hrs:.1f} / 20")
-            st.progress(pct_d)
+            st.markdown(_progress_html(pct_d, "#7c3aed"), unsafe_allow_html=True)
         with c4:
             st.metric("Requirements Met", f"{met_count} / {total_req}")
     except Exception:
@@ -493,7 +530,7 @@ def page_home():
             f"**ACS Checkride Readiness: {pct}%** "
             f"— {green} of {total} tasks at standard"
         )
-        st.progress(pct / 100)
+        st.markdown(_progress_html(pct / 100), unsafe_allow_html=True)
     except Exception:
         pass
 
@@ -1338,12 +1375,13 @@ def page_logbook():
     for i, (key, req) in enumerate(prog["progress"].items()):
         with c[i % 3]:
             pct = min(req["logged"] / req["required"], 1.0) if req["required"] else 1.0
+            bar_color = "#15803d" if req["met"] else "#0284c7"
             st.metric(
                 LABELS[key],
                 f"{req['logged']:.1f} / {req['required']:.0f} hrs",
                 delta="Met" if req["met"] else f"-{req['remaining']:.1f} to go",
             )
-            st.progress(pct)
+            st.markdown(_progress_html(pct, bar_color), unsafe_allow_html=True)
 
     st.divider()
     st.subheader(f"All Flights ({prog['flights']} completed)")
@@ -1551,7 +1589,7 @@ def _acs_html_table(flights, by_flt, latest, task_ids, editing_fid=None):
         "font-family:Inter,sans-serif;'>"
         "<thead><tr>"
         "<th style='background:#1e293b;color:white;padding:6px 8px;text-align:left;"
-        "min-width:220px;position:sticky;left:0;z-index:1;'>Task</th>"
+        "min-width:160px;max-width:200px;position:sticky;left:0;z-index:1;'>Task</th>"
     )
     for f in flights:
         date_str   = f.get("flight_date") or f.get("planned_date", "?")
@@ -1588,7 +1626,9 @@ def _acs_html_table(flights, by_flt, latest, task_ids, editing_fid=None):
         html += (
             f"<tr>"
             f"<td style='padding:4px 8px;border-bottom:1px solid rgba(100,116,139,0.15);"
-            f"color:inherit;'><b>{tid}</b> — {task['name']}</td>"
+            f"color:inherit;max-width:200px;white-space:normal;'>"
+            f"<b style='font-size:11px;'>{tid}</b>"
+            f"<br><span style='font-size:10px;color:#94a3b8;'>{task['name']}</span></td>"
         )
         for f in flights:
             entry  = by_flt.get(f["id"], {}).get(tid)
@@ -1625,8 +1665,14 @@ def page_skills():
 
     stats = get_readiness_summary(latest)
     st.info(stats["summary"])
-    st.progress(stats["pct"] / 100,
-                text=f"{stats['pct']}% of ACS tasks at standard ({stats['green']}/{stats['total']})")
+    rdy_clr = "#15803d" if stats["pct"] >= 80 else ("#b45309" if stats["pct"] >= 50 else "#991b1b")
+    st.markdown(
+        f"<div style='font-size:0.8rem;color:#475569;margin-bottom:2px;'>"
+        f"{stats['pct']}% of ACS tasks at standard ({stats['green']}/{stats['total']})"
+        f"</div>"
+        + _progress_html(stats["pct"] / 100, rdy_clr),
+        unsafe_allow_html=True,
+    )
 
     if not flights:
         st.info("Complete flights to populate the skills matrix.")
@@ -1961,7 +2007,21 @@ def page_profile():
                 f"Connected to: **{instructor.get('full_name') or instructor.get('email')}**"
             )
         else:
-            st.info("No instructor connected yet. Generate an invite link and share it with your instructor.")
+            st.info("No instructor connected yet.")
+            st.caption(
+                "How it works: generate a link below and share it with your instructor. "
+                "When they click it and log in (or create an account), they'll be linked to you automatically. "
+                "One instructor can have multiple students — each student generates their own invite."
+            )
+            import urllib.parse
+            instr_email = st.text_input(
+                "Instructor's email (optional — pre-fills the share message)",
+                value=st.session_state.get("invite_email", ""),
+                placeholder="cfi@example.com",
+                key="invite_email_input",
+            )
+            st.session_state.invite_email = instr_email
+
             if st.button("Generate Invite Link"):
                 try:
                     token = create_invite()
@@ -1969,9 +2029,23 @@ def page_profile():
                     st.session_state.generated_invite_link = f"{base}/?invite={token}"
                 except Exception as e:
                     st.error(f"Could not create invite: {e}")
+
             if st.session_state.generated_invite_link:
-                st.code(st.session_state.generated_invite_link, language=None)
-                st.caption("Share this link with your instructor. It expires in 7 days.")
+                link = st.session_state.generated_invite_link
+                st.code(link, language=None)
+                subject = urllib.parse.quote("You're invited to connect on Rho — Student Pilot Co-Pilot")
+                body = urllib.parse.quote(
+                    f"Hi,\n\nI'd like to add you as my instructor on Rho, a student pilot co-pilot app.\n\n"
+                    f"Click the link below to connect:\n{link}\n\n"
+                    f"The link expires in 7 days. If you don't have an account yet, you'll be prompted to create one.\n\nThanks!"
+                )
+                to = urllib.parse.quote(instr_email) if instr_email else ""
+                mailto = f"mailto:{to}?subject={subject}&body={body}"
+                st.markdown(
+                    f"[Open in email client]({mailto}) — or copy the link above and paste it manually.",
+                    unsafe_allow_html=False,
+                )
+                st.caption("Link expires in 7 days.")
 
         # Show pending invites
         try:
@@ -2309,56 +2383,132 @@ def page_tools():
 def page_feedback():
     st.header("Share Feedback")
     st.caption(
-        "Rho is in beta. Your feedback shapes what gets built next — "
-        "tell us what's working, what's confusing, or what you wish existed."
+        "Rho is in beta — your feedback shapes what gets built next. "
+        "You can log feedback for multiple features in one go."
     )
 
-    with st.form("feedback_form", clear_on_submit=True):
-        feature = st.selectbox(
-            "Which feature does this relate to?",
+    # Better selectbox contrast
+    st.markdown("""
+    <style>
+    div[data-testid="stSelectbox"] > div:first-child > div:first-child {
+        background: #f8fafc !important;
+        border: 1px solid #94a3b8 !important;
+    }
+    div[data-testid="stSelectbox"] svg { color: #334155 !important; fill: #334155 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Initialize entry ID list
+    if not st.session_state.get("feedback_ids"):
+        st.session_state.feedback_ids    = [0]
+        st.session_state.feedback_next_id = 1
+
+    fb_ids = st.session_state.feedback_ids
+
+    default_idx = FEEDBACK_FEATURES.index("Overall App / General")
+
+    for pos, fid in enumerate(fb_ids):
+        if pos > 0:
+            st.markdown("---")
+        hdr_col, rm_col = st.columns([6, 1])
+        with hdr_col:
+            if len(fb_ids) > 1:
+                st.markdown(f"**Feedback {pos + 1}**")
+        with rm_col:
+            if len(fb_ids) > 1:
+                if st.button("Remove", key=f"fb_rm_{fid}"):
+                    st.session_state.feedback_ids = [x for x in fb_ids if x != fid]
+                    # clear widget state for removed entry
+                    for suffix in ("feature", "rating", "message"):
+                        st.session_state.pop(f"fb_{suffix}_{fid}", None)
+                    st.rerun()
+
+        st.selectbox(
+            "Feature",
             FEEDBACK_FEATURES,
-            index=FEEDBACK_FEATURES.index("Overall App / General"),
+            index=st.session_state.get(f"fb_feature_{fid}", default_idx)
+                  if isinstance(st.session_state.get(f"fb_feature_{fid}"), int)
+                  else default_idx,
+            key=f"fb_feature_{fid}",
+            label_visibility="collapsed",
         )
 
-        rating = st.radio(
-            "How would you rate this feature?",
-            options=[1, 2, 3, 4, 5],
-            format_func=lambda x: {
-                1: "1 — Broken / unusable",
-                2: "2 — Needs a lot of work",
-                3: "3 — Works but could be better",
-                4: "4 — Good",
-                5: "5 — Love it",
-            }[x],
-            index=3,
+        st.caption("Rating (1 = poor, 5 = excellent)")
+        st.radio(
+            "Rating",
+            [1, 2, 3, 4, 5],
+            format_func=str,
+            index=(st.session_state.get(f"fb_rating_{fid}", 4) - 1),
             horizontal=True,
+            key=f"fb_rating_{fid}",
+            label_visibility="collapsed",
         )
 
-        message = st.text_area(
-            "Your feedback",
-            placeholder="What worked well? What was confusing? What would you change or add?",
-            height=140,
+        st.text_area(
+            "Feedback",
+            placeholder="What worked? What was confusing? What would you change?",
+            height=100,
+            key=f"fb_message_{fid}",
+            label_visibility="collapsed",
         )
 
-        submitted = st.form_submit_button(
-            "Submit Feedback", type="primary", use_container_width=False
-        )
+    add_col, _ = st.columns([2, 5])
+    with add_col:
+        if st.button("+ Add another feature", key="fb_add"):
+            nid = st.session_state.feedback_next_id
+            st.session_state.feedback_ids     = fb_ids + [nid]
+            st.session_state.feedback_next_id = nid + 1
+            st.rerun()
 
-    if submitted:
-        if not message.strip():
-            st.warning("Please add a message before submitting.")
-        else:
-            try:
-                uid = get_user_id()
-                submit_feedback(
-                    feature=feature,
-                    message=message,
-                    rating=rating,
-                    user_id=uid,
+    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+
+    if st.button("Submit Feedback", type="primary"):
+        # Read all entries from session state widget keys
+        fb_ids = st.session_state.feedback_ids
+        all_entries = []
+        empty_nums  = []
+        for pos, fid in enumerate(fb_ids):
+            msg = (st.session_state.get(f"fb_message_{fid}") or "").strip()
+            if not msg:
+                empty_nums.append(str(pos + 1))
+            else:
+                feat_val = st.session_state.get(f"fb_feature_{fid}")
+                feature  = (
+                    FEEDBACK_FEATURES[feat_val]
+                    if isinstance(feat_val, int)
+                    else (feat_val or FEEDBACK_FEATURES[default_idx])
                 )
-                st.success("Feedback submitted — thank you! It goes straight to Nic.")
-            except Exception as e:
-                st.error(f"Could not save feedback: {e}")
+                all_entries.append({
+                    "feature": feature,
+                    "rating":  st.session_state.get(f"fb_rating_{fid}", 4),
+                    "message": msg,
+                })
+        if empty_nums:
+            st.warning(f"Please add a message for feedback {', '.join(empty_nums)}.")
+        else:
+            errors = []
+            uid = get_user_id()
+            for e in all_entries:
+                try:
+                    submit_feedback(feature=e["feature"], message=e["message"],
+                                    rating=e["rating"], user_id=uid)
+                except Exception as ex:
+                    errors.append(str(ex))
+            if errors:
+                st.error(f"Some entries failed: {errors[0]}")
+            else:
+                n = len(all_entries)
+                st.success(
+                    f"{'Feedback' if n == 1 else str(n) + ' entries'} submitted — "
+                    "thank you! It goes straight to Nic."
+                )
+                # Reset form
+                for fid in st.session_state.feedback_ids:
+                    for suffix in ("feature", "rating", "message"):
+                        st.session_state.pop(f"fb_{suffix}_{fid}", None)
+                st.session_state.feedback_ids     = [0]
+                st.session_state.feedback_next_id = 1
+                st.rerun()
 
     st.divider()
     st.caption(
