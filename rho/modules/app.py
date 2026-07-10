@@ -118,6 +118,7 @@ from rho.modules.kneeboard  import generate_kneeboard
 from rho.modules.cheatsheet import generate_cheatsheet
 from rho.modules.navlog    import generate_navlog
 from rho.modules.reports   import generate_readiness_report, generate_lesson_plan
+from rho.modules.feedback  import submit_feedback, FEEDBACK_FEATURES
 from rho.modules.flights  import (
     create_flight, complete_flight, create_manual_flight,
     delete_flight, get_active_flights, get_flights, get_flight, get_progress,
@@ -392,6 +393,7 @@ def show_nav():
         ("Tools",            "tools"),
         ("Profile",          "profile"),
         ("📖 Guide",          "guide"),
+        ("💬 Feedback",       "feedback"),
     ]
     if st.session_state.user_role == "instructor":
         pages.append(("Students", "instructor"))
@@ -2302,6 +2304,69 @@ def page_tools():
     st.caption("CG limits shown are simplified two-point envelopes. Always verify against the POH loading graph for your specific aircraft serial number.")
 
 
+# ── Feedback ──────────────────────────────────────────────────────────────────
+
+def page_feedback():
+    st.header("Share Feedback")
+    st.caption(
+        "Rho is in beta. Your feedback shapes what gets built next — "
+        "tell us what's working, what's confusing, or what you wish existed."
+    )
+
+    with st.form("feedback_form", clear_on_submit=True):
+        feature = st.selectbox(
+            "Which feature does this relate to?",
+            FEEDBACK_FEATURES,
+            index=FEEDBACK_FEATURES.index("Overall App / General"),
+        )
+
+        rating = st.radio(
+            "How would you rate this feature?",
+            options=[1, 2, 3, 4, 5],
+            format_func=lambda x: {
+                1: "1 — Broken / unusable",
+                2: "2 — Needs a lot of work",
+                3: "3 — Works but could be better",
+                4: "4 — Good",
+                5: "5 — Love it",
+            }[x],
+            index=3,
+            horizontal=True,
+        )
+
+        message = st.text_area(
+            "Your feedback",
+            placeholder="What worked well? What was confusing? What would you change or add?",
+            height=140,
+        )
+
+        submitted = st.form_submit_button(
+            "Submit Feedback", type="primary", use_container_width=False
+        )
+
+    if submitted:
+        if not message.strip():
+            st.warning("Please add a message before submitting.")
+        else:
+            try:
+                uid = get_user_id()
+                submit_feedback(
+                    feature=feature,
+                    message=message,
+                    rating=rating,
+                    user_id=uid,
+                )
+                st.success("Feedback submitted — thank you! It goes straight to Nic.")
+            except Exception as e:
+                st.error(f"Could not save feedback: {e}")
+
+    st.divider()
+    st.caption(
+        "Feedback is private — only the Rho team can see it. "
+        "For urgent issues, email nsacramento2@gmail.com."
+    )
+
+
 # ── User Guide ────────────────────────────────────────────────────────────────
 
 def page_guide():
@@ -2412,6 +2477,8 @@ def main():
         page_instructor()
     elif page == "tools":
         page_tools()
+    elif page == "feedback":
+        page_feedback()
     elif page == "guide":
         page_guide()
 
