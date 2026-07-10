@@ -117,6 +117,7 @@ from rho.modules.comms      import get_comms
 from rho.modules.kneeboard  import generate_kneeboard
 from rho.modules.cheatsheet import generate_cheatsheet
 from rho.modules.navlog    import generate_navlog
+from rho.modules.reports   import generate_readiness_report, generate_lesson_plan
 from rho.modules.flights  import (
     create_flight, complete_flight, create_manual_flight,
     delete_flight, get_active_flights, get_flights, get_flight, get_progress,
@@ -388,6 +389,7 @@ def show_nav():
         ("Pre-Flight Brief", "preflight"),
         ("Flight Log",       "logbook"),
         ("ACS Skills",       "skills"),
+        ("Tools",            "tools"),
         ("Profile",          "profile"),
         ("📖 Guide",          "guide"),
     ]
@@ -1771,6 +1773,53 @@ def page_skills():
     else:
         st.success("All ACS tasks at standard — checkride ready!")
 
+    # ── PDF Downloads ─────────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Reports")
+    rpt_c1, rpt_c2 = st.columns(2)
+
+    pilot_name = st.session_state.get("user_name") or st.session_state.get("user_email")
+
+    with rpt_c1:
+        st.markdown("**Checkride Readiness Report** — full per-area ACS breakdown, student + CFI signature block.")
+        try:
+            rpt_bytes = generate_readiness_report(
+                latest_per_task=latest,
+                stats=stats,
+                pilot_name=pilot_name,
+                flight_rules="VFR",
+            )
+            st.download_button(
+                label="Download Readiness Report (PDF)",
+                data=rpt_bytes,
+                file_name="checkride_readiness.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                type="primary",
+            )
+        except Exception as e:
+            st.error(f"Could not generate report: {e}")
+
+    with rpt_c2:
+        st.markdown("**Lesson Plan** — next 3 lessons targeting your highest-priority skill gaps.")
+        try:
+            lp_bytes = generate_lesson_plan(
+                plan=plan,
+                latest_per_task=latest,
+                n_lessons=3,
+                pilot_name=pilot_name,
+                flight_rules="VFR",
+            )
+            st.download_button(
+                label="Download Lesson Plan (PDF)",
+                data=lp_bytes,
+                file_name="lesson_plan.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        except Exception as e:
+            st.caption(f"Lesson plan unavailable: {e}")
+
     # ── Instructor ratings (students with a connected instructor) ─────────────
     if st.session_state.get("user_role") == "student":
         try:
@@ -2066,6 +2115,193 @@ def page_instructor():
                 st.error(f"Could not save ratings: {e}")
 
 
+# ── Tools ─────────────────────────────────────────────────────────────────────
+
+def page_tools():
+    st.header("Tools")
+
+    # ── Density Altitude Calculator ───────────────────────────────────────────
+    st.subheader("Density Altitude")
+    st.caption("Performance calculations use density altitude, not pressure altitude. High DA = reduced climb rate, longer takeoff roll, reduced engine power.")
+
+    da_c1, da_c2, da_c3 = st.columns(3)
+    with da_c1:
+        pa_ft = st.number_input("Pressure Altitude (ft)", min_value=0, max_value=20000,
+                                value=0, step=100, key="da_pa")
+    with da_c2:
+        oat_c = st.number_input("Outside Air Temp (°C)", min_value=-40, max_value=50,
+                                value=15, step=1, key="da_oat")
+    with da_c3:
+        altimeter_in = st.number_input('Altimeter Setting ("Hg)', min_value=27.0,
+                                       max_value=31.0, value=29.92, step=0.01,
+                                       format="%.2f", key="da_alt")
+
+    # Pressure altitude from altimeter setting
+    # PA = field elevation + (29.92 - altimeter) * 1000
+    # If user enters PA directly (e.g. from altimeter set to 29.92), use as is
+    # ISA temperature at PA
+    isa_temp_c = 15.0 - (pa_ft / 1000.0) * 1.98
+    temp_dev   = oat_c - isa_temp_c
+
+    # ICAO density altitude formula: DA = PA + 118.8 * (OAT - ISA)
+    density_alt = int(pa_ft + 118.8 * temp_dev)
+
+    da_color = (
+        "green"  if density_alt < 2000 else
+        "orange" if density_alt < 5000 else
+        "red"
+    )
+    st.markdown(
+        f"<div style='background:#f1f5f9;border-radius:8px;padding:16px 20px;margin:8px 0;'>"
+        f"<span style='font-size:0.9rem;color:#475569;'>Density Altitude</span><br/>"
+        f"<span style='font-size:2rem;font-weight:800;color:{da_color};'>{density_alt:,} ft</span>"
+        f"&nbsp;&nbsp;<span style='font-size:0.85rem;color:#6b7280;'>"
+        f"ISA at PA: {isa_temp_c:.1f}°C &nbsp;|&nbsp; "
+        f"Temp deviation: {temp_dev:+.1f}°C from ISA</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    if density_alt > 5000:
+        st.warning("High density altitude — expect significantly degraded climb performance and longer takeoff roll. Review POH performance charts.")
+    elif density_alt > 2000:
+        st.info("Elevated density altitude — review POH performance charts before flight.")
+
+    st.divider()
+
+    # ── W&B Calculator ────────────────────────────────────────────────────────
+    st.subheader("Weight & Balance")
+    st.caption("Select your aircraft, enter station weights, and Rho will compute gross weight and CG. Always verify against your specific aircraft's POH loading graph.")
+
+    # Aircraft selector
+    ac_options_list = list(AIRCRAFT_OPTIONS.keys())
+    default_ac = None
+    if st.session_state.get("aircraft_type"):
+        default_disp = AIRCRAFT_DISPLAY.get(st.session_state.aircraft_type)
+        if default_disp and default_disp in ac_options_list:
+            default_ac = default_disp
+
+    ac_sel = st.selectbox(
+        "Aircraft",
+        ac_options_list,
+        index=ac_options_list.index(default_ac) if default_ac else 0,
+        key="wb_aircraft",
+    )
+    ac_key = AIRCRAFT_OPTIONS.get(ac_sel)
+    ac     = get_aircraft(ac_key) if ac_key else None
+    wb     = ac.get("wb") if ac else None
+
+    if not ac or not wb:
+        st.info("W&B data not available for this aircraft. Select a different aircraft.")
+        return
+
+    st.caption(f"Datum: {wb['datum']} &nbsp;|&nbsp; Empty weight: {ac['empty_weight_lbs']:,} lbs at arm {wb['empty_arm']} in &nbsp;|&nbsp; Max gross: {ac['max_gross_lbs']:,} lbs &nbsp;|&nbsp; CG limits: {wb['cg_fwd_in']}–{wb['cg_aft_in']} in")
+
+    # Station inputs
+    stations = wb["stations"]
+    st.markdown("**Enter station weights:**")
+
+    wb_inputs = {}
+    n_cols = min(len(stations), 4)
+    wb_cols = st.columns(n_cols)
+    for i, (station_name, station) in enumerate(stations.items()):
+        with wb_cols[i % n_cols]:
+            max_lbs = station["max_lbs"]
+            if "Fuel" in station_name:
+                # Offer gallons → auto-convert
+                gal = st.number_input(
+                    f"{station_name} (gal)",
+                    min_value=0.0,
+                    max_value=float(ac.get("fuel_usable_gal", max_lbs // 6)),
+                    value=0.0,
+                    step=1.0,
+                    key=f"wb_{station_name}",
+                )
+                lbs = round(gal * wb.get("fuel_lbs_per_gal", 6.0), 1)
+                st.caption(f"= {lbs} lbs")
+                wb_inputs[station_name] = lbs
+            else:
+                lbs = st.number_input(
+                    f"{station_name} (lbs)",
+                    min_value=0,
+                    max_value=max_lbs,
+                    value=0,
+                    step=5,
+                    key=f"wb_{station_name}",
+                )
+                wb_inputs[station_name] = lbs
+
+    # Calculate
+    empty_wt  = ac["empty_weight_lbs"]
+    empty_mom = empty_wt * wb["empty_arm"]
+
+    total_payload_wt  = sum(wb_inputs.values())
+    total_payload_mom = sum(
+        wb_inputs[sn] * stations[sn]["arm"]
+        for sn in stations
+    )
+
+    gross_wt  = empty_wt + total_payload_wt
+    total_mom = empty_mom + total_payload_mom
+    cg_in     = round(total_mom / gross_wt, 2) if gross_wt else 0
+
+    max_gross  = ac["max_gross_lbs"]
+    cg_fwd     = wb["cg_fwd_in"]
+    cg_aft     = wb["cg_aft_in"]
+
+    wt_ok  = gross_wt <= max_gross
+    cg_ok  = cg_fwd <= cg_in <= cg_aft
+    all_ok = wt_ok and cg_ok
+
+    # Results display
+    res_clr = "#15803d" if all_ok else "#991b1b"
+    verdict = "WITHIN LIMITS" if all_ok else "OUT OF LIMITS"
+
+    st.markdown(
+        f"<div style='background:#f1f5f9;border-radius:8px;padding:16px 20px;margin:12px 0;'>"
+        f"<div style='display:flex;gap:40px;align-items:center;'>"
+        f"<div><span style='font-size:0.8rem;color:#475569;'>Gross Weight</span><br/>"
+        f"<span style='font-size:1.6rem;font-weight:800;color:{'#15803d' if wt_ok else '#991b1b'};'>"
+        f"{gross_wt:,} lbs</span><br/>"
+        f"<span style='font-size:0.75rem;color:#6b7280;'>max {max_gross:,} lbs</span></div>"
+        f"<div><span style='font-size:0.8rem;color:#475569;'>CG Position</span><br/>"
+        f"<span style='font-size:1.6rem;font-weight:800;color:{'#15803d' if cg_ok else '#991b1b'};'>"
+        f"{cg_in} in</span><br/>"
+        f"<span style='font-size:0.75rem;color:#6b7280;'>limits: {cg_fwd}–{cg_aft} in</span></div>"
+        f"<div><span style='font-size:0.8rem;color:#475569;'>Verdict</span><br/>"
+        f"<span style='font-size:1.4rem;font-weight:800;color:{res_clr};'>{verdict}</span></div>"
+        f"</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    if not wt_ok:
+        over = gross_wt - max_gross
+        st.error(f"Over max gross weight by {over} lbs. Reduce payload before flight.")
+    if not cg_ok:
+        if cg_in < cg_fwd:
+            st.error(f"CG too far forward ({cg_in} in vs limit {cg_fwd} in). Shift weight aft or reduce forward stations.")
+        else:
+            st.error(f"CG too far aft ({cg_in} in vs limit {cg_aft} in). This is a serious stability hazard — do not fly.")
+
+    # Station breakdown table
+    with st.expander("Station breakdown"):
+        rows = [("Station", "Weight (lbs)", "Arm (in)", "Moment (lb·in)")]
+        rows.append((f"Empty Aircraft", f"{empty_wt:,}", f"{wb['empty_arm']}", f"{int(empty_mom):,}"))
+        for sn, lbs in wb_inputs.items():
+            arm = stations[sn]["arm"]
+            mom = lbs * arm
+            rows.append((sn, f"{lbs}", f"{arm}", f"{int(mom):,}"))
+        rows.append(("TOTAL", f"{gross_wt:,}", f"{cg_in}", f"{int(total_mom):,}"))
+
+        for i, row in enumerate(rows):
+            cols = st.columns([2, 1, 1, 1.5])
+            for j, cell in enumerate(row):
+                bold = (i == 0 or i == len(rows) - 1)
+                cols[j].markdown(f"**{cell}**" if bold else cell)
+
+    st.caption("CG limits shown are simplified two-point envelopes. Always verify against the POH loading graph for your specific aircraft serial number.")
+
+
 # ── User Guide ────────────────────────────────────────────────────────────────
 
 def page_guide():
@@ -2174,6 +2410,8 @@ def main():
         page_profile()
     elif page == "instructor":
         page_instructor()
+    elif page == "tools":
+        page_tools()
     elif page == "guide":
         page_guide()
 

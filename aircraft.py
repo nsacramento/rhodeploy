@@ -3,9 +3,12 @@ Rho — aircraft module.
 
 Preset POH data for common training aircraft.
 All V-speeds in KIAS. Weights in lbs. Fuel in gal. Burn in gph.
+W&B arms in inches from datum. Moments in lb·in.
 
 NOTE: These are representative values from published POH documents.
       Always verify against YOUR specific aircraft's POH before flight.
+      CG limits are simplified two-point envelopes — use the actual
+      POH loading graph for your specific serial number and configuration.
 """
 
 # ── Preset aircraft types ──────────────────────────────────────────────────────
@@ -42,6 +45,19 @@ AIRCRAFT_TYPES = {
         "climb_fpm":          715,
         "cruise_ktas":        107,
         "range_nm":           340,
+        # W&B (arms in inches from datum = leading edge of wing)
+        "wb": {
+            "datum":      "Leading edge of wing",
+            "fuel_lbs_per_gal": 6.0,
+            "stations": {
+                "Front Seats":  {"arm": 33.8,  "max_lbs": 400},
+                "Fuel (std)":   {"arm": 37.5,  "max_lbs": 147},  # 24.5 gal usable
+                "Baggage":      {"arm": 65.5,  "max_lbs": 120},
+            },
+            "empty_arm":  35.7,   # typical; use actual Weight & Balance sheet
+            "cg_fwd_in":  31.0,   # forward CG limit (in)
+            "cg_aft_in":  36.5,   # aft CG limit (in)
+        },
     },
     "c172n": {
         "display":           "Cessna 172N Skyhawk",
@@ -68,6 +84,20 @@ AIRCRAFT_TYPES = {
         "climb_fpm":          770,
         "cruise_ktas":        122,
         "range_nm":           420,
+        # W&B (arms in inches from datum = firewall)
+        "wb": {
+            "datum":      "Firewall",
+            "fuel_lbs_per_gal": 6.0,
+            "stations": {
+                "Front Seats":  {"arm": 37.0,  "max_lbs": 400},
+                "Rear Seats":   {"arm": 73.0,  "max_lbs": 400},
+                "Fuel (std)":   {"arm": 48.0,  "max_lbs": 240},  # 40 gal
+                "Baggage":      {"arm": 95.0,  "max_lbs": 120},
+            },
+            "empty_arm":  39.0,
+            "cg_fwd_in":  35.0,
+            "cg_aft_in":  47.3,
+        },
     },
     "c172s": {
         "display":           "Cessna 172S Skyhawk SP",
@@ -94,6 +124,21 @@ AIRCRAFT_TYPES = {
         "climb_fpm":          730,
         "cruise_ktas":        124,
         "range_nm":           518,
+        # W&B (arms in inches from datum = firewall)
+        "wb": {
+            "datum":      "Firewall",
+            "fuel_lbs_per_gal": 6.0,
+            "stations": {
+                "Front Seats":  {"arm": 37.0,  "max_lbs": 400},
+                "Rear Seats":   {"arm": 73.0,  "max_lbs": 400},
+                "Fuel (std)":   {"arm": 48.0,  "max_lbs": 318},  # 53 gal
+                "Baggage A":    {"arm": 95.0,  "max_lbs": 120},
+                "Baggage B":    {"arm": 123.0, "max_lbs": 50},
+            },
+            "empty_arm":  40.2,
+            "cg_fwd_in":  35.0,
+            "cg_aft_in":  47.3,
+        },
     },
     "c182t": {
         "display":           "Cessna 182T Skylane",
@@ -120,6 +165,21 @@ AIRCRAFT_TYPES = {
         "climb_fpm":          924,
         "cruise_ktas":        145,
         "range_nm":           916,
+        # W&B (arms in inches from datum = firewall)
+        "wb": {
+            "datum":      "Firewall",
+            "fuel_lbs_per_gal": 6.0,
+            "stations": {
+                "Front Seats":  {"arm": 37.0,  "max_lbs": 400},
+                "Rear Seats":   {"arm": 74.0,  "max_lbs": 400},
+                "Fuel (std)":   {"arm": 46.0,  "max_lbs": 498},  # 83 gal
+                "Baggage A":    {"arm": 90.5,  "max_lbs": 200},
+                "Baggage B":    {"arm": 123.0, "max_lbs": 50},
+            },
+            "empty_arm":  38.5,
+            "cg_fwd_in":  35.0,
+            "cg_aft_in":  47.3,
+        },
     },
     "pa28_161": {
         "display":           "Piper PA-28-161 Warrior II",
@@ -146,6 +206,20 @@ AIRCRAFT_TYPES = {
         "climb_fpm":          710,
         "cruise_ktas":        117,
         "range_nm":           465,
+        # W&B (datum = firewall)
+        "wb": {
+            "datum":      "Firewall",
+            "fuel_lbs_per_gal": 6.0,
+            "stations": {
+                "Front Seats":  {"arm": 80.5,  "max_lbs": 400},
+                "Rear Seats":   {"arm": 118.1, "max_lbs": 400},
+                "Fuel (std)":   {"arm": 95.0,  "max_lbs": 288},  # 48 gal
+                "Baggage":      {"arm": 142.8, "max_lbs": 200},
+            },
+            "empty_arm":  86.6,
+            "cg_fwd_in":  82.0,
+            "cg_aft_in":  93.0,
+        },
     },
     "pa28_181": {
         "display":           "Piper PA-28-181 Archer III",
@@ -172,6 +246,20 @@ AIRCRAFT_TYPES = {
         "climb_fpm":          667,
         "cruise_ktas":        125,
         "range_nm":           465,
+        # W&B (datum = firewall)
+        "wb": {
+            "datum":      "Firewall",
+            "fuel_lbs_per_gal": 6.0,
+            "stations": {
+                "Front Seats":  {"arm": 80.5,  "max_lbs": 400},
+                "Rear Seats":   {"arm": 118.1, "max_lbs": 400},
+                "Fuel (std)":   {"arm": 95.0,  "max_lbs": 288},  # 48 gal
+                "Baggage":      {"arm": 142.8, "max_lbs": 200},
+            },
+            "empty_arm":  87.1,
+            "cg_fwd_in":  82.0,
+            "cg_aft_in":  93.0,
+        },
     },
     "pa38": {
         "display":           "Piper PA-38-112 Tomahawk",
@@ -198,6 +286,20 @@ AIRCRAFT_TYPES = {
         "climb_fpm":          718,
         "cruise_ktas":        109,
         "range_nm":           360,
+        # W&B (datum = wing leading edge)
+        "wb": {
+            "datum":      "Leading edge of wing",
+            "fuel_lbs_per_gal": 6.0,
+            "stations": {
+                "Pilot/Front": {"arm": 13.0,  "max_lbs": 400},
+                "Rear Seat":   {"arm": 51.0,  "max_lbs": 200},
+                "Fuel":        {"arm": 0.0,   "max_lbs": 180},  # 30 gal
+                "Baggage":     {"arm": 58.0,  "max_lbs": 100},
+            },
+            "empty_arm":  14.1,
+            "cg_fwd_in":  10.0,
+            "cg_aft_in":  20.0,
+        },
     },
     "da20": {
         "display":           "Diamond DA20-C1 Eclipse",
@@ -224,6 +326,20 @@ AIRCRAFT_TYPES = {
         "climb_fpm":          800,
         "cruise_ktas":        130,
         "range_nm":           392,
+        # W&B (datum = firewall)
+        "wb": {
+            "datum":      "Firewall",
+            "fuel_lbs_per_gal": 6.0,
+            "stations": {
+                "Pilot":       {"arm": 40.0, "max_lbs": 300},
+                "Passenger":   {"arm": 40.0, "max_lbs": 300},
+                "Fuel":        {"arm": 46.0, "max_lbs": 129},  # 21.5 gal
+                "Baggage":     {"arm": 80.0, "max_lbs": 66},
+            },
+            "empty_arm":  43.5,
+            "cg_fwd_in":  38.0,
+            "cg_aft_in":  52.0,
+        },
     },
     "da40": {
         "display":           "Diamond DA40-180",
@@ -250,6 +366,20 @@ AIRCRAFT_TYPES = {
         "climb_fpm":          1070,
         "cruise_ktas":        147,
         "range_nm":           720,
+        # W&B (datum = firewall)
+        "wb": {
+            "datum":      "Firewall",
+            "fuel_lbs_per_gal": 6.0,
+            "stations": {
+                "Front Seats":  {"arm": 40.0, "max_lbs": 400},
+                "Rear Seats":   {"arm": 74.0, "max_lbs": 300},
+                "Fuel":         {"arm": 46.0, "max_lbs": 216},  # 36 gal
+                "Baggage":      {"arm": 91.0, "max_lbs": 110},
+            },
+            "empty_arm":  44.0,
+            "cg_fwd_in":  39.0,
+            "cg_aft_in":  52.0,
+        },
     },
 }
 
