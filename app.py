@@ -366,7 +366,11 @@ def show_nav():
     h_left, h_right = st.columns([6, 2])
     with h_left:
         name_display = st.session_state.user_name or st.session_state.user_email or "Pilot"
-        st.markdown(f"**Rho** — {name_display}")
+        role_badge = st.session_state.user_role or "student"
+        st.markdown(
+            f"**Pilot** — {name_display}<br>"
+            f"<span style='font-size:0.85rem;color:#6b7280'>Co-Pilot — Rho</span>",
+            unsafe_allow_html=True)
     with h_right:
         role_badge = st.session_state.user_role or "student"
         st.caption(f"{name_display}  ·  {role_badge}")
@@ -2044,58 +2048,87 @@ def page_instructor():
 # ── User Guide ────────────────────────────────────────────────────────────────
 
 def page_guide():
-    st.markdown("## 📖 How to Use Rho")
-    st.caption("Your VFR flight planning co-pilot — from brief to debrief in five steps.")
+    st.markdown("## How to Use Rho")
+    st.caption("A VFR flight planning co-pilot built for student pilots. "
+               "Rho consolidates weather, airspace, communications, and training tracking "
+               "into one workflow — from initial brief through post-flight debrief.")
     st.divider()
 
     steps = [
-        ("1️⃣", "Set Up Your Profile",
-         "Go to **Profile** and enter your name, role (student or instructor), and default aircraft. "
-         "This pre-fills your brief forms and tracks your training history."),
-        ("2️⃣", "Run a Pre-Flight Brief",
-         "Go to **Pre-Flight Brief**, pick your origin and destination airports, set cruise altitude, "
-         "and hit **Generate Brief**. Rho pulls live METAR/TAF weather, active SIGMETs, airspace along "
-         "your route, and all airport communications frequencies."),
-        ("3️⃣", "Make Your GO / NO-GO Decision",
-         "Rho gives you a weather-based recommendation — **GO** (green), **CAUTION** (yellow), or "
-         "**NO-GO** (red) — based on VFR student pilot minimums. You make the final call. "
-         "Hitting GO creates a flight record; NO-GO archives the brief."),
-        ("4️⃣", "Fly — then Complete Your Log",
-         "After landing, go to **Flight Log**, find your active flight, and fill in the debrief form: "
-         "actual duration, conditions, takeoffs/landings, and any notes. This feeds your Part 61.109 "
-         "hour totals automatically."),
-        ("5️⃣", "Log Your ACS Skills",
-         "After each flight, rate your performance on ACS tasks (Normal Takeoff, Steep Turns, "
-         "Short-Field Landing, etc.) on a 1–4 scale. The **ACS Skills** matrix shows your progress "
-         "across all flights and highlights areas to prioritize next lesson."),
+        ("01", "Set Up Your Profile",
+         "Establishes who you are in the system and seeds your default aircraft across all flights.",
+         "Go to **Profile**, enter your full name, select your role (student or instructor), "
+         "and choose your default aircraft type and tail number. "
+         "This information pre-fills your brief forms and ties your training history to your account."),
+
+        ("02", "Run a Pre-Flight Brief",
+         "The core of Rho. Pulls live weather, airspace, and comms data for your specific route "
+         "so you can make an informed go/no-go decision before you leave the ground.",
+         "Go to **Pre-Flight Brief**, select origin and destination airports by state, set your "
+         "planned cruise altitude, and choose your aircraft for the flight. "
+         "Hit **Generate Brief** to pull live METAR and TAF weather, active SIGMETs and G-AIRMETs, "
+         "airspace along your route with penetration warnings, runway and crosswind analysis, "
+         "and all tower, ground, ATIS, and UNICOM frequencies for both airports."),
+
+        ("03", "Make Your GO / NO-GO Decision",
+         "Keeps the decision authority with you — the pilot in command — while giving you "
+         "objective weather data to back it up.",
+         "Rho evaluates conditions against VFR student pilot minimums and flags a recommendation: "
+         "**GO**, **CAUTION**, or **NO-GO**. Review the full brief, download your kneeboard and "
+         "in-flight guide PDFs, then make your call. "
+         "Pressing GO creates an active flight record you can complete after landing. "
+         "NO-GO archives the brief for your records without starting a flight."),
+
+        ("04", "Complete Your Flight Log",
+         "Captures the actual flight for your logbook and builds toward your Part 61.109 "
+         "aeronautical experience requirements.",
+         "After landing, go to **Flight Log**, find your active flight, and open the debrief form. "
+         "Log actual flight time, conditions (day/night, hood, cross-country), takeoffs and landings, "
+         "and any notes. Rho updates your running Part 61.109 hour totals automatically."),
+
+        ("05", "Log Your ACS Skills",
+         "Tracks training progress task by task so you and your instructor can see where you are "
+         "ready and where you still need work.",
+         "After each flight, rate yourself on the ACS tasks you practiced — Normal Takeoff, "
+         "Steep Turns, Short-Field Landing, and so on — using a 1–4 proficiency scale. "
+         "The **ACS Skills** matrix shows every task across every flight as a color-coded grid. "
+         "Your instructor can also leave independent ratings per flight via a connected instructor account, "
+         "and Rho flags any gaps between your self-ratings and theirs."),
     ]
 
-    for icon, title, body in steps:
-        col_icon, col_body = st.columns([1, 8])
-        with col_icon:
-            st.markdown(f"<div style='font-size:2rem;text-align:center;padding-top:0.3rem'>{icon}</div>",
-                        unsafe_allow_html=True)
+    for num, title, purpose, instructions in steps:
+        col_num, col_body = st.columns([1, 10])
+        with col_num:
+            st.markdown(
+                f"<div style='font-size:1.6rem;font-weight:800;color:#4a6fa5;"
+                f"text-align:center;padding-top:0.2rem'>{num}</div>",
+                unsafe_allow_html=True)
         with col_body:
             st.markdown(f"**{title}**")
-            st.markdown(body)
+            st.caption(purpose)
+            st.markdown(instructions)
         st.divider()
 
-    st.markdown("#### PDFs")
     c1, c2 = st.columns(2)
     with c1:
-        st.info("**Kneeboard** — download from the brief page. One-page pre-flight summary: "
-                "weather, route, checklist, V-speeds, and emergency reference.")
+        st.markdown("**Kneeboard PDF**")
+        st.markdown("Available on the brief page after generating a brief. "
+                    "One-page pre-flight summary with weather snapshot, route distance, "
+                    "V-speeds for your aircraft, pre-departure checklist, and emergency reference.")
     with c2:
-        st.info("**In-Flight Guide** — departure comms, heading/ETE to destination, "
-                "airspace crossings in order, arrival comms, and weather concerns.")
+        st.markdown("**In-Flight Guide PDF**")
+        st.markdown("Departure communications script, heading and estimated time to destination, "
+                    "airspace crossings in route order with class rules, arrival communications, "
+                    "and active weather concerns.")
 
     st.divider()
-    st.markdown("#### Tips")
+    st.markdown("**A few things worth knowing**")
     st.markdown(
-        "- Airport dropdowns are filtered by US state — pick a state to load nearby airports.\n"
-        "- Aircraft type is set **per flight** at brief time, not locked to your profile.\n"
-        "- Instructors can connect via an invite link in your Profile page and leave ACS ratings per flight.\n"
-        "- Winds aloft and SIGMET data update in real time every time you generate a brief."
+        "Airport dropdowns load by US state — select a state first, then pick your airport from the list. "
+        "Aircraft type is selected per flight at brief time, not fixed to your profile, since many students "
+        "train in multiple aircraft. "
+        "Instructors connect to student accounts via an invite link generated in the Profile page. "
+        "All weather data — METAR, TAF, SIGMET, winds aloft — is fetched live each time you generate a brief."
     )
 
 
