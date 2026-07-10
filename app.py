@@ -31,20 +31,26 @@ st.markdown("""
 header[data-testid="stHeader"] { display: none; }
 [data-testid="stToolbar"] { display: none; }
 
-/* Sidebar re-open button — make it obvious when sidebar is collapsed */
-[data-testid="collapsedControl"] {
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
-    width: 2rem !important;
-    height: 2rem !important;
-    background: #1e293b !important;
-    border-radius: 0 6px 6px 0 !important;
-    color: white !important;
-    opacity: 1 !important;
-    top: 1rem !important;
+/* Hide the sidebar collapse/close button so nav can't be accidentally hidden */
+[data-testid="stSidebarCollapseButton"] { display: none !important; }
+[data-testid="collapsedControl"] { display: none !important; }
+
+/* ── Login tab fix (global so it lands before tabs render) ──────────────── */
+[data-baseweb="tab-list"], [role="tablist"] {
+    background: #ffffff !important;
+    border-radius: 8px 8px 0 0 !important;
 }
-[data-testid="collapsedControl"] svg { color: white !important; fill: white !important; }
+[data-baseweb="tab"], [role="tab"] {
+    color: #334155 !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
+    background: transparent !important;
+}
+[data-baseweb="tab"][aria-selected="true"],
+[role="tab"][aria-selected="true"] {
+    color: #1d4ed8 !important;
+    font-weight: 700 !important;
+}
 
 /* Sidebar nav button polish */
 [data-testid="stSidebar"] [data-testid="stButton"] button {
@@ -304,27 +310,7 @@ def show_auth():
     [data-testid="stTextInput"] label,
     [data-testid="stSelectbox"] label,
     [data-testid="stForm"] label { color: rgba(255,255,255,0.9) !important; }
-    /* Tab list — force white background so we always know what's behind the text */
-    [data-baseweb="tab-list"] {
-        background: rgba(255,255,255,0.96) !important;
-        border-radius: 8px 8px 0 0 !important;
-        padding: 4px 4px 0 !important;
-    }
-    /* Unselected tab: dark readable text on white */
-    [data-baseweb="tab"] {
-        background: transparent !important;
-        color: #475569 !important;
-        font-weight: 600 !important;
-    }
-    [data-baseweb="tab"] p,
-    [data-baseweb="tab"] span { color: #475569 !important; }
-    /* Selected tab: navy bold with underline */
-    [aria-selected="true"][data-baseweb="tab"] {
-        color: #1e3a8a !important;
-        font-weight: 700 !important;
-    }
-    [aria-selected="true"][data-baseweb="tab"] p,
-    [aria-selected="true"][data-baseweb="tab"] span { color: #1e3a8a !important; }
+    /* Tab styles injected globally above — no duplicate needed here */
     .rho-login-card {
         background: rgba(255,255,255,0.95);
         border-radius: 16px;
