@@ -29,6 +29,8 @@ st.set_page_config(
 st.markdown("""
 <style>
 [data-testid="collapsedControl"] { display: none; }
+header[data-testid="stHeader"] { display: none; }
+[data-testid="stToolbar"] { display: none; }
 
 /* Nav bar */
 .nav-bar { display: flex; gap: 4px; margin-bottom: 1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
@@ -265,17 +267,19 @@ def show_auth():
         font-size: 3rem;
         line-height: 1;
         margin-bottom: 0.25rem;
+        filter: brightness(0) invert(1);
     }
     .rho-login-title {
         font-size: 2rem;
         font-weight: 800;
-        color: #0a1628;
+        color: #ffffff;
         letter-spacing: -0.5px;
         margin: 0;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.4);
     }
     .rho-login-tagline {
         font-size: 0.9rem;
-        color: #4a6fa5;
+        color: #b8d4f0;
         margin: 0.15rem 0 0;
         font-style: italic;
     }
