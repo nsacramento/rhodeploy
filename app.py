@@ -22,7 +22,7 @@ st.set_page_config(
     page_title="Rho — Student Pilot Co-Pilot",
     page_icon="✈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ── Global styles ─────────────────────────────────────────────────────────────
@@ -30,27 +30,9 @@ st.markdown("""
 <style>
 header[data-testid="stHeader"] { display: none; }
 [data-testid="stToolbar"] { display: none; }
+[data-testid="stSidebar"] { display: none !important; }
 
-/* Sidebar re-open tab — fixed to left edge, impossible to miss */
-[data-testid="collapsedControl"] {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    position: fixed !important;
-    left: 0 !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
-    width: 1.75rem !important;
-    height: 3.5rem !important;
-    background: #1e293b !important;
-    border-radius: 0 8px 8px 0 !important;
-    box-shadow: 2px 0 8px rgba(0,0,0,0.25) !important;
-    z-index: 9999 !important;
-    cursor: pointer !important;
-}
-[data-testid="collapsedControl"] svg { fill: white !important; color: white !important; }
-
-/* ── Input field contrast — visible borders on all interactive elements ──── */
+/* ── Input field contrast — text inputs, number inputs, textareas ─────── */
 [data-testid="stTextInput"] input,
 [data-testid="stNumberInput"] input,
 [data-testid="stTextArea"] textarea {
@@ -58,16 +40,24 @@ header[data-testid="stHeader"] { display: none; }
     border-radius: 6px !important;
     background: #ffffff !important;
 }
-div[data-baseweb="select"] > div:first-child,
-div[data-baseweb="input"] > div {
-    border: 1.5px solid #94a3b8 !important;
+
+/* ── Selectbox / dropdown contrast ─────────────────────────────────────── */
+/* box-shadow as border so inline styles can't override it */
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
+    box-shadow: 0 0 0 1.5px #94a3b8 !important;
     border-radius: 6px !important;
-    background: #ffffff !important;
+    background-color: #ffffff !important;
+}
+/* Fallback broader selector */
+div[data-baseweb="select"] > div {
+    box-shadow: 0 0 0 1.5px #94a3b8 !important;
+    background-color: #ffffff !important;
 }
 
-/* ── Login tab fix ───────────────────────────────────────────────────────── */
+/* ── Login tab colors (dark bg) — overridden to white in show_auth() ──── */
 [data-baseweb="tab"], [role="tab"] {
-    color: #334155 !important;
+    color: #1e293b !important;
     font-weight: 600 !important;
     opacity: 1 !important;
 }
@@ -75,15 +65,6 @@ div[data-baseweb="input"] > div {
 [role="tab"][aria-selected="true"] {
     color: #1d4ed8 !important;
     font-weight: 700 !important;
-}
-
-/* Sidebar nav button polish */
-[data-testid="stSidebar"] [data-testid="stButton"] button {
-    border-radius: 6px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    text-align: left !important;
-    justify-content: flex-start !important;
 }
 
 /* Section headers */
@@ -368,6 +349,17 @@ def show_auth():
         margin: 0.15rem 0 0;
         font-style: italic;
     }
+    /* Tab colors on dark login background — override global dark rule */
+    [data-baseweb="tab"], [role="tab"] {
+        color: rgba(255,255,255,0.75) !important;
+        font-weight: 600 !important;
+        opacity: 1 !important;
+    }
+    [data-baseweb="tab"][aria-selected="true"],
+    [role="tab"][aria-selected="true"] {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -442,48 +434,35 @@ def show_nav():
     name_display = st.session_state.user_name or st.session_state.user_email or "Pilot"
     role_display = (st.session_state.user_role or "student").capitalize()
 
-    # ── Sidebar ───────────────────────────────────────────────────────────────
-    with st.sidebar:
+    pages = [
+        ("Home",             "home"),
+        ("Pre-Flight Brief", "preflight"),
+        ("Flight Log",       "logbook"),
+        ("ACS Skills",       "skills"),
+        ("Tools",            "tools"),
+        ("Profile",          "profile"),
+        ("Guide",            "guide"),
+        ("Feedback",         "feedback"),
+    ]
+    if st.session_state.user_role == "instructor":
+        pages.append(("Students", "instructor"))
+
+    # ── Top bar: brand + pilot info + sign out ────────────────────────────────
+    brand_col, info_col, signout_col = st.columns([1, 6, 1])
+    with brand_col:
         st.markdown(
-            "<div style='text-align:center;padding:6px 0 14px;'>"
-            "<div style='font-size:2rem;line-height:1;'>✈</div>"
-            "<div style='font-weight:800;font-size:1.25rem;color:#1e293b;letter-spacing:-0.5px;'>Rho</div>"
-            "<div style='font-size:0.72rem;color:#64748b;'>Student Pilot Co-Pilot</div>"
-            "</div>",
+            "<div style='font-size:1.1rem;font-weight:800;color:#1e293b;"
+            "padding:6px 0;letter-spacing:-0.5px;'>✈ Rho</div>",
             unsafe_allow_html=True,
         )
-
+    with info_col:
         st.markdown(
-            f"<div style='background:#f1f5f9;border-radius:8px;padding:8px 12px;margin-bottom:10px;'>"
-            f"<div style='font-size:0.75rem;color:#94a3b8;margin-bottom:1px;'>Signed in as</div>"
-            f"<div style='font-weight:600;font-size:0.88rem;color:#1e293b;'>{name_display}</div>"
-            f"<div style='font-size:0.75rem;color:#64748b;'>{role_display}</div>"
+            f"<div style='padding:6px 0;font-size:0.82rem;color:#64748b;'>"
+            f"<b style='color:#1e293b;'>{name_display}</b> &nbsp;·&nbsp; {role_display}"
             f"</div>",
             unsafe_allow_html=True,
         )
-
-        pages = [
-            ("Home",             "home"),
-            ("Pre-Flight Brief", "preflight"),
-            ("Flight Log",       "logbook"),
-            ("ACS Skills",       "skills"),
-            ("Tools",            "tools"),
-            ("Profile",          "profile"),
-            ("Guide",            "guide"),
-            ("Feedback",         "feedback"),
-        ]
-        if st.session_state.user_role == "instructor":
-            pages.append(("Students", "instructor"))
-
-        for label, key in pages:
-            active = st.session_state.current_page == key
-            if st.button(label, key=f"nav_{key}", use_container_width=True,
-                         type="primary" if active else "secondary"):
-                st.session_state.current_page = key
-                st.rerun()
-
-        st.markdown("<div style='margin-top:auto;'></div>", unsafe_allow_html=True)
-        st.markdown("---")
+    with signout_col:
         if st.button("Sign Out", key="signout", use_container_width=True):
             sign_out()
             for k in ("authenticated", "user_email", "user_role", "user_name",
@@ -493,7 +472,24 @@ def show_nav():
                 st.session_state[k] = False if k == "authenticated" else None
             st.rerun()
 
-    # ── Profile missing banner (main area) ───────────────────────────────────
+    # ── Nav strip ─────────────────────────────────────────────────────────────
+    nav_cols = st.columns(len(pages))
+    for col, (label, key) in zip(nav_cols, pages):
+        with col:
+            active = st.session_state.current_page == key
+            # Thin dark bar above the active page button
+            st.markdown(
+                "<div style='height:3px;background:"
+                + ("#1e293b" if active else "transparent")
+                + ";border-radius:2px;margin-bottom:2px;'></div>",
+                unsafe_allow_html=True,
+            )
+            if st.button(label, key=f"nav_{key}", use_container_width=True,
+                         type="secondary"):
+                st.session_state.current_page = key
+                st.rerun()
+
+    # ── Profile missing banner ────────────────────────────────────────────────
     if st.session_state.user_role is None:
         col_pmsg, col_pbtn = st.columns([5, 1])
         with col_pmsg:
@@ -503,7 +499,7 @@ def show_nav():
                 st.session_state.current_page = "profile"
                 st.rerun()
 
-    # ── Active flight banner (main area) ─────────────────────────────────────
+    # ── Active flight banner ──────────────────────────────────────────────────
     try:
         active_flights = get_active_flights()
     except Exception:
@@ -522,6 +518,7 @@ def show_nav():
                 st.session_state.current_page = "logbook"
                 st.rerun()
 
+    st.divider()
     return st.session_state.current_page
 
 
