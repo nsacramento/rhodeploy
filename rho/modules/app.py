@@ -116,6 +116,7 @@ from rho.modules.insights   import get_preflight_brief, _derive_category, _forma
 from rho.modules.comms      import get_comms
 from rho.modules.kneeboard  import generate_kneeboard
 from rho.modules.cheatsheet import generate_cheatsheet
+from rho.modules.navlog    import generate_navlog
 from rho.modules.flights  import (
     create_flight, complete_flight, create_manual_flight,
     delete_flight, get_active_flights, get_flights, get_flight, get_progress,
@@ -1017,14 +1018,16 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
     # ── Downloads ─────────────────────────────────────────────────────────────
     st.divider()
     st.subheader("Flight Documents")
-    dl_c1, dl_c2 = st.columns(2)
+    dl_c1, dl_c2, dl_c3 = st.columns(3)
 
     with dl_c1:
-        st.markdown("**In-Flight Guide** — take this with you. Comms, headings, airspace rules in crossing order.")
+        st.markdown("**In-Flight Guide** — comms, headings, airspace rules, radio scripts.")
         try:
             cs_bytes = generate_cheatsheet(
                 brief, comms_o, comms_d,
                 aircraft=get_aircraft(aircraft_key),
+                tail_number=tail_number,
+                flight_rules="VFR",
             )
             st.download_button(
                 label="Download In-Flight Guide (PDF)",
@@ -1053,6 +1056,24 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
             )
         except Exception as e:
             st.caption(f"Kneeboard unavailable: {e}")
+
+    with dl_c3:
+        st.markdown("**VFR Nav Log** — headings, WCA, GS, ETE, fuel planning.")
+        try:
+            nl_bytes = generate_navlog(
+                brief,
+                aircraft=get_aircraft(aircraft_key),
+                flight_rules="VFR",
+            )
+            st.download_button(
+                label="Download Nav Log (PDF)",
+                data=nl_bytes,
+                file_name=f"navlog_{origin}_{dest}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        except Exception as e:
+            st.caption(f"Nav log unavailable: {e}")
 
     # ── Go / No-Go decision ───────────────────────────────────────────────────
     st.divider()

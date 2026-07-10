@@ -12,6 +12,7 @@ import math
 from rho.modules.weather import get_weather_brief, get_winds_aloft_for_state
 from rho.modules.airport import get_airport_full
 from rho.modules.routing import get_airspace_near, generate_routes
+from rho.modules.tfr import get_tfrs_near_route
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 MAX_WIND_KT = 15    # student pilot comfort threshold
@@ -107,6 +108,24 @@ def get_preflight_brief(origin_icao, dest_icao, cruise_alt_ft=3500):
                     f"{g.get('hazard')} due to {g.get('due_to') or 'unknown'}"
                 )
 
+    # TFRs — fetch active TFRs along the route corridor (30 nm pad)
+    active_tfrs = []
+    if all(v is not None for v in [o_lat_ref, o_lon_ref, d_lat_ref, d_lon_ref]):
+        try:
+            active_tfrs = get_tfrs_near_route(
+                o_lat_ref, o_lon_ref,
+                d_lat_ref, d_lon_ref,
+                flight_rules="VFR",
+                pad_nm=30,
+            )
+        except Exception:
+            active_tfrs = []
+    for tfr in active_tfrs:
+        hazards.append(
+            f"TFR {tfr['notam_id']} within 30 nm of route — "
+            f"{tfr['tfr_type']}, SFC–{tfr['alt_ceil']}, radius {tfr['radius_nm']:.0f} nm"
+        )
+
     # ── Go/no-go ──────────────────────────────────────────────────────────────
     recommendation, reason = _go_nogo(origin_assess, dest_assess)
 
@@ -132,6 +151,7 @@ def get_preflight_brief(origin_icao, dest_icao, cruise_alt_ft=3500):
         "winds_aloft":    winds_aloft, # { "3000": {dir, spd, temp_c, label}, ... }
         "hazards":        hazards,
         "sigmets":        active_sigmets,
+        "tfrs":           active_tfrs,
         "recommendation": recommendation,
         "reason":         reason,
         "summary":        summary,

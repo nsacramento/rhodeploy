@@ -237,18 +237,151 @@ def _airport_section(icao, assess, comms, role="DEPARTURE", col_w=3.5*inch):
 
 
 
+# ── Radio scripts section ─────────────────────────────────────────────────────
+
+def _radio_scripts_section(origin, dest, comms_o, comms_d,
+                            o_ass, d_ass, tail=None, flight_rules="VFR"):
+    """
+    Returns a list of flowables with departure + arrival radio call scripts.
+    Towered airports: ATIS → Ground → Tower → (Approach).
+    Non-towered airports: AWOS/UNICOM → CTAF position calls.
+    """
+    call = tail if tail else "N_____"
+
+    # Try to infer aircraft type label from display name
+    # (not available here — use generic "student aircraft")
+    ac_type = "student aircraft"
+
+    o_towered = bool(comms_o.get("tower"))
+    d_towered = bool(comms_d.get("tower"))
+
+    def _freq(d, key):
+        val = d.get(key)
+        if not val:
+            return "—"
+        if isinstance(val, list):
+            return val[0].get("freq", "—") if val else "—"
+        return str(val)
+
+    o_atis   = _freq(comms_o, "atis")
+    o_ground = _freq(comms_o, "ground")
+    o_tower  = _freq(comms_o, "tower")
+    o_ctaf   = _freq(comms_o, "ctaf") or _freq(comms_o, "unicom")
+    o_dep    = _freq(comms_o, "approach")   # approach doubles as departure
+
+    d_atis   = _freq(comms_d, "atis")
+    d_appr   = _freq(comms_d, "approach")
+    d_tower  = _freq(comms_d, "tower")
+    d_ground = _freq(comms_d, "ground")
+    d_ctaf   = _freq(comms_d, "ctaf") or _freq(comms_d, "unicom")
+
+    o_rwy = o_ass.get("best_runway") or "XX"
+    d_rwy = d_ass.get("best_runway") or "XX"
+
+    story = []
+    story.append(_banner("  RADIO SCRIPTS", bg=_TEAL))
+    story.append(Spacer(1, 4))
+
+    # ── Departure scripts ─────────────────────────────────────────────────────
+    story.append(Paragraph(f"<b>Departure — {origin} "
+                           f"({'Towered' if o_towered else 'Non-Towered'})</b>", _KEY))
+    story.append(Spacer(1, 3))
+
+    if o_towered:
+        dep_rows = []
+        if o_atis != "—":
+            dep_rows.append(("1  ATIS", f"[{o_atis}]  Listen for Information ___. Note altimeter."))
+        if o_ground != "—":
+            dep_rows.append(("2  Ground", f"[{o_ground}]  \"{origin} Ground, {call}, "
+                            f"{ac_type}, at ramp, VFR to {dest} with Information ___, "
+                            f"request taxi.\""))
+        if o_tower != "—":
+            dep_rows.append(("3  Tower", f"[{o_tower}]  \"{origin} Tower, {call}, "
+                            f"holding short of runway {o_rwy}, ready for departure, "
+                            f"VFR to {dest}.\""))
+        if o_dep != "—":
+            dep_rows.append(("4  Departure", f"[{o_dep}]  \"{origin} Departure, {call}, "
+                            f"climbing through ___ft, VFR to {dest}, "
+                            f"request flight following.\""))
+        if dep_rows:
+            story.append(_kv(dep_rows, key_w=1.0*inch, val_w=6.1*inch))
+    else:
+        dep_rows = []
+        if o_atis != "—":
+            dep_rows.append(("AWOS/UNICOM", f"[{o_atis or o_ctaf}]  Check winds and wx. Note altimeter."))
+        if o_ctaf != "—":
+            dep_rows.append(("Taxi", f"[{o_ctaf}]  \"{origin} traffic, {call}, "
+                            f"{ac_type}, taxiing to runway {o_rwy}, {origin}.\""))
+            dep_rows.append(("Takeoff", f"[{o_ctaf}]  \"{origin} traffic, {call}, "
+                            f"departing runway {o_rwy}, remaining in pattern / "
+                            f"departing {dest} direction, {origin}.\""))
+            dep_rows.append(("Airborne", f"[{o_ctaf}]  \"{origin} traffic, {call}, "
+                            f"departing {origin}, {dest} bound, "
+                            f"climbing through ___ft, {origin}.\""))
+        if dep_rows:
+            story.append(_kv(dep_rows, key_w=1.0*inch, val_w=6.1*inch))
+
+    story.append(Spacer(1, 6))
+
+    # ── Arrival scripts ───────────────────────────────────────────────────────
+    story.append(Paragraph(f"<b>Arrival — {dest} "
+                           f"({'Towered' if d_towered else 'Non-Towered'})</b>", _KEY))
+    story.append(Spacer(1, 3))
+
+    if d_towered:
+        arr_rows = []
+        if d_atis != "—":
+            arr_rows.append(("1  ATIS", f"[{d_atis}]  Get Information ___. Note altimeter "
+                            f"and active runway before calling approach."))
+        if d_appr != "—":
+            arr_rows.append(("2  Approach", f"[{d_appr}]  \"{dest} Approach, {call}, "
+                            f"{ac_type}, ___nm {dest} direction, ___ft, "
+                            f"VFR, request landing {dest}.\""))
+        if d_tower != "—":
+            arr_rows.append(("3  Tower", f"[{d_tower}]  \"{dest} Tower, {call}, "
+                            f"{ac_type}, ___ [position], inbound, with Information ___.\""))
+        if d_ground != "—":
+            arr_rows.append(("4  Ground", f"[{d_ground}]  \"{dest} Ground, {call}, "
+                            f"clear of runway {d_rwy}, request taxi to ramp.\""))
+        if arr_rows:
+            story.append(_kv(arr_rows, key_w=1.0*inch, val_w=6.1*inch))
+    else:
+        arr_rows = []
+        if d_ctaf != "—":
+            arr_rows.append(("10 nm out", f"[{d_ctaf}]  \"{dest} traffic, {call}, "
+                            f"{ac_type}, 10 miles ___ [direction], inbound, {dest}.\""))
+            arr_rows.append(("45° entry", f"[{d_ctaf}]  \"{dest} traffic, {call}, "
+                            f"entering 45 downwind runway {d_rwy}, {dest}.\""))
+            arr_rows.append(("Downwind", f"[{d_ctaf}]  \"{dest} traffic, {call}, "
+                            f"downwind runway {d_rwy}, {dest}.\""))
+            arr_rows.append(("Base", f"[{d_ctaf}]  \"{dest} traffic, {call}, "
+                            f"base runway {d_rwy}, {dest}.\""))
+            arr_rows.append(("Final", f"[{d_ctaf}]  \"{dest} traffic, {call}, "
+                            f"final runway {d_rwy}, {dest}.\""))
+            arr_rows.append(("Clear", f"[{d_ctaf}]  \"{dest} traffic, {call}, "
+                            f"clear of runway {d_rwy}, {dest}.\""))
+        if arr_rows:
+            story.append(_kv(arr_rows, key_w=1.0*inch, val_w=6.1*inch))
+
+    story.append(Spacer(1, 4))
+    return story
+
+
 # ── Main generator ────────────────────────────────────────────────────────────
 
-def generate_cheatsheet(brief, comms_o, comms_d, aircraft=None):
+def generate_cheatsheet(brief, comms_o, comms_d, aircraft=None,
+                        tail_number=None, flight_rules="VFR"):
     """
     Generate an in-flight cheat sheet PDF.
 
     Parameters
     ----------
-    brief    : dict from insights.get_preflight_brief()
-    comms_o  : dict from comms.get_comms(origin)
-    comms_d  : dict from comms.get_comms(dest)
-    aircraft : dict from aircraft.get_aircraft() or None — adds V-speeds strip
+    brief        : dict from insights.get_preflight_brief()
+    comms_o      : dict from comms.get_comms(origin)
+    comms_d      : dict from comms.get_comms(dest)
+    aircraft     : dict from aircraft.get_aircraft() or None — adds V-speeds strip
+    tail_number  : str or None — e.g. "N12345", used in radio scripts
+    flight_rules : "VFR" | "IFR" — reserved for future IFR radio script variants
 
     Returns
     -------
@@ -455,6 +588,14 @@ def generate_cheatsheet(brief, comms_o, comms_d, aircraft=None):
         story.append(Spacer(1, 4))
 
     story.append(Spacer(1, 4))
+
+    # ── Radio scripts ─────────────────────────────────────────────────────────
+    story += _radio_scripts_section(
+        origin, dest, comms_o, comms_d,
+        o_ass, d_ass,
+        tail=tail_number,
+        flight_rules=flight_rules,
+    )
 
     # ── V-speeds strip (if aircraft provided) ─────────────────────────────────
     if aircraft:
