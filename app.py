@@ -80,7 +80,12 @@ button[data-testid="baseButton-primary"]:hover {
     border-color: #7f1d1d !important;
 }
 
-/* ── Login page — aviation sky gradient ── */
+/* ── App background — light aviation blue-gray (logged-in state) ── */
+[data-testid="stAppViewContainer"] { background-color: #eef2f7 !important; }
+[data-testid="stMain"]             { background-color: #eef2f7 !important; }
+.block-container { padding-top: 1.2rem !important; }
+
+/* ── Login page — aviation sky gradient (overrides above) ── */
 .rho-login-page [data-testid="stAppViewContainer"],
 .rho-login-bg {
     background: linear-gradient(160deg, #0a1628 0%, #1a3a5c 40%, #1e6091 70%, #5ba3d4 100%) !important;
@@ -250,8 +255,19 @@ def show_auth():
     [data-testid="stAppViewContainer"] {
         background: linear-gradient(160deg, #0a1628 0%, #0d2a4a 35%, #1a4f7a 65%, #4a90c4 100%) !important;
     }
-    [data-testid="stMain"] { background: transparent !important; }
+    [data-testid="stMain"]   { background: transparent !important; }
     [data-testid="stBottom"] { background: transparent !important; }
+    /* Override app background on login page */
+    [data-testid="stAppViewContainer"] {
+        background: linear-gradient(160deg, #0a1628 0%, #0d2a4a 35%, #1a4f7a 65%, #4a90c4 100%) !important;
+    }
+    /* White labels for form fields on dark background */
+    [data-testid="stTextInput"] label,
+    [data-testid="stSelectbox"] label,
+    [data-testid="stForm"] label { color: rgba(255,255,255,0.9) !important; }
+    /* Tab text */
+    [data-baseweb="tab"] { color: rgba(255,255,255,0.75) !important; }
+    [aria-selected="true"][data-baseweb="tab"] { color: #ffffff !important; }
     .rho-login-card {
         background: rgba(255,255,255,0.95);
         border-radius: 16px;
@@ -350,10 +366,10 @@ def show_nav():
     h_left, h_right = st.columns([6, 2])
     with h_left:
         name_display = st.session_state.user_name or st.session_state.user_email or "Pilot"
-        st.markdown(f"### Rho — {name_display}")
+        st.markdown(f"**Rho** — {name_display}")
     with h_right:
         role_badge = st.session_state.user_role or "student"
-        st.caption(f"{st.session_state.user_email}  ·  {role_badge}")
+        st.caption(f"{name_display}  ·  {role_badge}")
         if st.button("Sign Out", key="signout", use_container_width=True):
             sign_out()
             for k in ("authenticated", "user_email", "user_role", "user_name",
@@ -368,6 +384,7 @@ def show_nav():
         ("Flight Log",       "logbook"),
         ("ACS Skills",       "skills"),
         ("Profile",          "profile"),
+        ("📖 Guide",          "guide"),
     ]
     if st.session_state.user_role == "instructor":
         pages.append(("Students", "instructor"))
@@ -2024,6 +2041,64 @@ def page_instructor():
                 st.error(f"Could not save ratings: {e}")
 
 
+# ── User Guide ────────────────────────────────────────────────────────────────
+
+def page_guide():
+    st.markdown("## 📖 How to Use Rho")
+    st.caption("Your VFR flight planning co-pilot — from brief to debrief in five steps.")
+    st.divider()
+
+    steps = [
+        ("1️⃣", "Set Up Your Profile",
+         "Go to **Profile** and enter your name, role (student or instructor), and default aircraft. "
+         "This pre-fills your brief forms and tracks your training history."),
+        ("2️⃣", "Run a Pre-Flight Brief",
+         "Go to **Pre-Flight Brief**, pick your origin and destination airports, set cruise altitude, "
+         "and hit **Generate Brief**. Rho pulls live METAR/TAF weather, active SIGMETs, airspace along "
+         "your route, and all airport communications frequencies."),
+        ("3️⃣", "Make Your GO / NO-GO Decision",
+         "Rho gives you a weather-based recommendation — **GO** (green), **CAUTION** (yellow), or "
+         "**NO-GO** (red) — based on VFR student pilot minimums. You make the final call. "
+         "Hitting GO creates a flight record; NO-GO archives the brief."),
+        ("4️⃣", "Fly — then Complete Your Log",
+         "After landing, go to **Flight Log**, find your active flight, and fill in the debrief form: "
+         "actual duration, conditions, takeoffs/landings, and any notes. This feeds your Part 61.109 "
+         "hour totals automatically."),
+        ("5️⃣", "Log Your ACS Skills",
+         "After each flight, rate your performance on ACS tasks (Normal Takeoff, Steep Turns, "
+         "Short-Field Landing, etc.) on a 1–4 scale. The **ACS Skills** matrix shows your progress "
+         "across all flights and highlights areas to prioritize next lesson."),
+    ]
+
+    for icon, title, body in steps:
+        col_icon, col_body = st.columns([1, 8])
+        with col_icon:
+            st.markdown(f"<div style='font-size:2rem;text-align:center;padding-top:0.3rem'>{icon}</div>",
+                        unsafe_allow_html=True)
+        with col_body:
+            st.markdown(f"**{title}**")
+            st.markdown(body)
+        st.divider()
+
+    st.markdown("#### PDFs")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.info("**Kneeboard** — download from the brief page. One-page pre-flight summary: "
+                "weather, route, checklist, V-speeds, and emergency reference.")
+    with c2:
+        st.info("**In-Flight Guide** — departure comms, heading/ETE to destination, "
+                "airspace crossings in order, arrival comms, and weather concerns.")
+
+    st.divider()
+    st.markdown("#### Tips")
+    st.markdown(
+        "- Airport dropdowns are filtered by US state — pick a state to load nearby airports.\n"
+        "- Aircraft type is set **per flight** at brief time, not locked to your profile.\n"
+        "- Instructors can connect via an invite link in your Profile page and leave ACS ratings per flight.\n"
+        "- Winds aloft and SIGMET data update in real time every time you generate a brief."
+    )
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -2045,6 +2120,8 @@ def main():
         page_profile()
     elif page == "instructor":
         page_instructor()
+    elif page == "guide":
+        page_guide()
 
 
 if __name__ == "__main__":
