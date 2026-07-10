@@ -2366,6 +2366,78 @@ def page_feedback():
         "For urgent issues, email nsacramento2@gmail.com."
     )
 
+    # ── Admin panel (only visible to nsacramento2@gmail.com) ──────────────────
+    if st.session_state.get("user_email") == "nsacramento2@gmail.com":
+        st.divider()
+        st.subheader("Admin — All Feedback")
+
+        try:
+            from rho.modules.feedback import get_all_feedback
+            entries = get_all_feedback(limit=500)
+        except Exception as e:
+            st.error(f"Could not load feedback: {e}")
+            entries = []
+
+        if not entries:
+            st.info("No feedback submitted yet.")
+        else:
+            # Summary stats
+            total   = len(entries)
+            rated   = [e for e in entries if e.get("rating")]
+            avg_rating = round(sum(e["rating"] for e in rated) / len(rated), 1) if rated else None
+
+            s1, s2, s3 = st.columns(3)
+            s1.metric("Total submissions", total)
+            s2.metric("Avg rating", f"{avg_rating} / 5" if avg_rating else "—")
+            s3.metric("Features mentioned", len(set(e["feature"] for e in entries)))
+
+            # CSV download
+            import io
+            csv_lines = ["Date,Feature,Rating,Message"]
+            for e in entries:
+                date    = (e.get("created_at") or "")[:10]
+                feature = e.get("feature", "").replace(",", ";")
+                rating  = str(e.get("rating") or "")
+                message = (e.get("message") or "").replace('"', "'").replace("\n", " ")
+                csv_lines.append(f'{date},"{feature}",{rating},"{message}"')
+            csv_bytes = "\n".join(csv_lines).encode("utf-8")
+
+            st.download_button(
+                label="Download all feedback (CSV)",
+                data=csv_bytes,
+                file_name="rho_feedback.csv",
+                mime="text/csv",
+                type="primary",
+            )
+
+            st.divider()
+
+            # Per-feature breakdown
+            from_feature = {}
+            for e in entries:
+                f = e.get("feature", "Other")
+                from_feature.setdefault(f, []).append(e)
+
+            for feature, items in sorted(from_feature.items(),
+                                         key=lambda x: -len(x[1])):
+                f_ratings = [i["rating"] for i in items if i.get("rating")]
+                f_avg = round(sum(f_ratings) / len(f_ratings), 1) if f_ratings else None
+                avg_str = f"  ·  avg {f_avg}/5" if f_avg else ""
+
+                with st.expander(f"{feature}  ({len(items)} submissions{avg_str})"):
+                    for item in items:
+                        date   = (item.get("created_at") or "")[:10]
+                        rating = item.get("rating")
+                        stars  = ("★" * rating + "☆" * (5 - rating)) if rating else "no rating"
+                        st.markdown(
+                            f"<div style='padding:8px 0;border-bottom:1px solid #e2e8f0;'>"
+                            f"<span style='font-size:11px;color:#94a3b8;'>{date}</span>"
+                            f"&nbsp;&nbsp;<span style='color:#b45309;font-size:12px;'>{stars}</span><br/>"
+                            f"{item.get('message', '')}"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
 
 # ── User Guide ────────────────────────────────────────────────────────────────
 
