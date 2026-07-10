@@ -31,20 +31,45 @@ st.markdown("""
 header[data-testid="stHeader"] { display: none; }
 [data-testid="stToolbar"] { display: none; }
 
-/* Hide the sidebar collapse/close button so nav can't be accidentally hidden */
-[data-testid="stSidebarCollapseButton"] { display: none !important; }
-[data-testid="collapsedControl"] { display: none !important; }
-
-/* ── Login tab fix (global so it lands before tabs render) ──────────────── */
-[data-baseweb="tab-list"], [role="tablist"] {
-    background: #ffffff !important;
-    border-radius: 8px 8px 0 0 !important;
+/* Sidebar re-open tab — fixed to left edge, impossible to miss */
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: fixed !important;
+    left: 0 !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    width: 1.75rem !important;
+    height: 3.5rem !important;
+    background: #1e293b !important;
+    border-radius: 0 8px 8px 0 !important;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.25) !important;
+    z-index: 9999 !important;
+    cursor: pointer !important;
 }
+[data-testid="collapsedControl"] svg { fill: white !important; color: white !important; }
+
+/* ── Input field contrast — visible borders on all interactive elements ──── */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stTextArea"] textarea {
+    border: 1.5px solid #94a3b8 !important;
+    border-radius: 6px !important;
+    background: #ffffff !important;
+}
+div[data-baseweb="select"] > div:first-child,
+div[data-baseweb="input"] > div {
+    border: 1.5px solid #94a3b8 !important;
+    border-radius: 6px !important;
+    background: #ffffff !important;
+}
+
+/* ── Login tab fix ───────────────────────────────────────────────────────── */
 [data-baseweb="tab"], [role="tab"] {
     color: #334155 !important;
     font-weight: 600 !important;
     opacity: 1 !important;
-    background: transparent !important;
 }
 [data-baseweb="tab"][aria-selected="true"],
 [role="tab"][aria-selected="true"] {
@@ -184,6 +209,7 @@ for key, default in [
     ("instr_student_id",      None),   # instructor dashboard: selected student
     ("generated_invite_link", None),   # persisted invite link so it survives reruns
     ("invite_email",          ""),     # email typed into instructor invite input
+    ("pending_invite",        None),   # invite token preserved across login/signup rerun
     ("aircraft_type",         None),   # default aircraft type key (e.g. 'c172s')
     ("aircraft_tail",         None),   # default tail number (e.g. 'N12345')
     ("feedback_ids",          None),   # list of unique feedback entry IDs (int)
@@ -365,9 +391,11 @@ def show_auth():
                         sign_in(email, pw)
                         st.session_state.authenticated = True
                         st.session_state.user_email    = email
-                        # If arriving via an invite link, go straight to Profile to accept
-                        if st.query_params.get("invite"):
-                            st.session_state.current_page = "profile"
+                        # Preserve invite token across rerun, redirect to Profile
+                        _tok = st.query_params.get("invite")
+                        if _tok:
+                            st.session_state.pending_invite  = _tok
+                            st.session_state.current_page    = "profile"
                         st.rerun()
                     except Exception as e:
                         st.error(f"Sign-in failed: {e}")
@@ -386,6 +414,11 @@ def show_auth():
                         st.session_state.user_email    = email
                         st.session_state.user_role     = role
                         st.session_state.user_name     = full_name
+                        # Preserve invite token across rerun, redirect to Profile
+                        _tok = st.query_params.get("invite")
+                        if _tok:
+                            st.session_state.pending_invite = _tok
+                            st.session_state.current_page   = "profile"
                         st.rerun()
                     except Exception as e:
                         st.error(f"Sign-up failed: {e}")
@@ -1949,20 +1982,50 @@ def page_skills():
 def page_profile():
     st.header("Profile")
 
-    # ── Check for incoming invite token ──────────────────────────────────────
-    invite_token = st.query_params.get("invite")
+    # ── Check for incoming invite token (URL param or session state) ─────────
+    invite_token = st.query_params.get("invite") or st.session_state.get("pending_invite")
     if invite_token:
-        st.info(f"Invite token detected: `{invite_token}`")
-        if st.button("Accept Instructor Invite", type="primary"):
+        try:
             result = accept_invite(invite_token)
             if result.get("ok"):
-                st.success("Instructor connection accepted! Reload the page.")
+                st.success(
+                    "You're now connected as this student's instructor! "
+                    "You can view their flights in the **Students** tab."
+                )
+                st.session_state.pending_invite = None
+                st.session_state.user_role      = "instructor"
                 st.query_params.clear()
-                st.session_state.user_role = "instructor"
-                st.rerun()
             else:
-                st.error(result.get("error", "Could not accept invite."))
+                err = result.get("error", "Could not process invite.")
+                if "already used" in err or "not found" in err:
+                    st.info(
+                        "This invite link has already been used or expired. "
+                        "Ask the student to generate a new one."
+                    )
+                else:
+                    st.error(err)
+                st.session_state.pending_invite = None
+        except Exception as e:
+            st.warning(f"Invite processing error: {e}")
+            st.session_state.pending_invite = None
         st.divider()
+
+    # ── Manual invite code entry (fallback for instructors) ───────────────────
+    with st.expander("Enter an invite code manually"):
+        manual_token = st.text_input("Paste invite code here", key="manual_invite_input",
+                                     placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+        if st.button("Connect", key="manual_invite_btn") and manual_token.strip():
+            try:
+                result = accept_invite(manual_token.strip())
+                if result.get("ok"):
+                    st.success("Connected! Check the Students tab.")
+                    st.session_state.user_role = "instructor"
+                    st.rerun()
+                else:
+                    st.error(result.get("error", "Invalid or expired code."))
+            except Exception as e:
+                st.error(f"Error: {e}")
+    st.divider()
 
     # ── Load current profile ──────────────────────────────────────────────────
     try:
