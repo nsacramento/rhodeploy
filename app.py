@@ -289,13 +289,27 @@ def show_auth():
     [data-testid="stTextInput"] label,
     [data-testid="stSelectbox"] label,
     [data-testid="stForm"] label { color: rgba(255,255,255,0.9) !important; }
-    /* Tab text — tabs render on the white card, so use dark text */
-    [data-baseweb="tab"] { color: #64748b !important; font-weight: 500 !important; }
+    /* Tab list — force white background so we always know what's behind the text */
+    [data-baseweb="tab-list"] {
+        background: rgba(255,255,255,0.96) !important;
+        border-radius: 8px 8px 0 0 !important;
+        padding: 4px 4px 0 !important;
+    }
+    /* Unselected tab: dark readable text on white */
+    [data-baseweb="tab"] {
+        background: transparent !important;
+        color: #475569 !important;
+        font-weight: 600 !important;
+    }
+    [data-baseweb="tab"] p,
+    [data-baseweb="tab"] span { color: #475569 !important; }
+    /* Selected tab: navy bold with underline */
     [aria-selected="true"][data-baseweb="tab"] {
         color: #1e3a8a !important;
         font-weight: 700 !important;
-        border-bottom: 3px solid #1e3a8a !important;
     }
+    [aria-selected="true"][data-baseweb="tab"] p,
+    [aria-selected="true"][data-baseweb="tab"] span { color: #1e3a8a !important; }
     .rho-login-card {
         background: rgba(255,255,255,0.95);
         border-radius: 16px;
