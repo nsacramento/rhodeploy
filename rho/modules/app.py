@@ -563,6 +563,8 @@ def page_home():
             st.markdown(_progress_html(pct_d, "#7c3aed"), unsafe_allow_html=True)
         with c4:
             st.metric("Requirements Met", f"{met_count} / {total_req}")
+            pct_r = min(met_count / max(total_req, 1), 1.0)
+            st.markdown(_progress_html(pct_r, "#f59e0b"), unsafe_allow_html=True)
     except Exception:
         pass
 
