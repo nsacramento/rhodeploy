@@ -2212,7 +2212,7 @@ def page_instructor():
     except Exception:
         instr_ratings = {}
 
-    student_ratings = {r["task_id"]: r["rating"] for r in skill_rows}
+    student_ratings = {r["acs_task_id"]: r["proficiency"] for r in skill_rows}
 
     # ── Build dual-column ACS matrix ─────────────────────────────────────────
     RATING_ICON = {3: "🟢", 2: "🟡", 1: "🔴", None: "—"}
