@@ -221,7 +221,7 @@ td.cell-total-blank { background: #e2e8f0; color: #94a3b8; text-align: center; }
 """, unsafe_allow_html=True)
 
 # ── Module imports ────────────────────────────────────────────────────────────
-from rho.modules.auth       import sign_in, sign_up, sign_out, get_user_id, try_restore_session
+from rho.modules.auth       import sign_in, sign_up, sign_out, get_user_id, try_restore_session, get_user_metadata
 from rho.modules.insights   import get_preflight_brief, _derive_category, _format_sky
 from rho.modules.comms      import get_comms
 from rho.modules.kneeboard  import generate_kneeboard
@@ -534,6 +534,18 @@ def show_auth(cookie_manager):
                                                    expires_at=datetime.now() + timedelta(days=30))
                         except Exception:
                             pass
+                        # Bootstrap profile from metadata if this is a freshly confirmed account
+                        try:
+                            prof = get_profile()
+                            if not prof or not prof.get("full_name"):
+                                meta = get_user_metadata()
+                                if meta:
+                                    create_or_update_profile(
+                                        full_name=meta.get("full_name"),
+                                        role=meta.get("role", "student"),
+                                    )
+                        except Exception:
+                            pass
                         st.session_state.authenticated = True
                         st.session_state.user_email    = email
                         # Preserve invite token across rerun, redirect to Profile
@@ -560,7 +572,7 @@ def show_auth(cookie_manager):
                         st.error("Please agree to the terms above before creating an account.")
                         st.stop()
                     try:
-                        sign_up(email, pw)
+                        sign_up(email, pw, full_name=full_name, role=role)
                         # Email confirmation is required — try signing in immediately,
                         # but gracefully handle the "not confirmed" case.
                         try:
@@ -587,20 +599,30 @@ def show_auth(cookie_manager):
                         except Exception as signin_err:
                             err_lower = str(signin_err).lower()
                             if "not confirmed" in err_lower or "email" in err_lower:
-                                st.info(
-                                    f"**Almost there!** A confirmation link has been sent to **{email}**. "
-                                    f"Click the link in that email to activate your account, "
-                                    f"then return here and sign in."
+                                st.markdown(
+                                    f"<div style='background:rgba(255,255,255,0.15);border:1px solid "
+                                    f"rgba(255,255,255,0.35);border-radius:8px;padding:1rem;"
+                                    f"color:#ffffff;font-size:0.9rem;'>"
+                                    f"✅ <b>Almost there!</b> A confirmation link has been sent to "
+                                    f"<b>{email}</b>. Click it to activate your account, "
+                                    f"then come back here and sign in."
+                                    f"</div>",
+                                    unsafe_allow_html=True,
                                 )
                             else:
                                 raise signin_err
                     except Exception as e:
                         err_lower = str(e).lower()
                         if "not confirmed" in err_lower or "email" in err_lower:
-                            st.info(
-                                f"**Almost there!** A confirmation link has been sent to **{email}**. "
-                                f"Click the link in that email to activate your account, "
-                                f"then return here and sign in."
+                            st.markdown(
+                                f"<div style='background:rgba(255,255,255,0.15);border:1px solid "
+                                f"rgba(255,255,255,0.35);border-radius:8px;padding:1rem;"
+                                f"color:#ffffff;font-size:0.9rem;'>"
+                                f"✅ <b>Almost there!</b> A confirmation link has been sent to "
+                                f"<b>{email}</b>. Click it to activate your account, "
+                                f"then come back here and sign in."
+                                f"</div>",
+                                unsafe_allow_html=True,
                             )
                         else:
                             st.error(f"Sign-up failed: {e}")

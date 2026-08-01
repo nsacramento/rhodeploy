@@ -17,15 +17,33 @@ Usage:
 from rho.modules.db import get_client
 
 
-def sign_up(email, password):
+def sign_up(email, password, full_name=None, role=None):
     """
     Create a new Rho account.
+    Stores full_name and role in user metadata so they survive email confirmation flow.
     Returns the user dict on success; raises on failure.
     """
-    response = get_client().auth.sign_up({"email": email, "password": password})
+    payload = {"email": email, "password": password}
+    if full_name or role:
+        payload["options"] = {"data": {"full_name": full_name or "", "role": role or "student"}}
+    response = get_client().auth.sign_up(payload)
     if not response.user:
         raise RuntimeError(f"Sign-up failed: {response}")
     return {"id": response.user.id, "email": response.user.email}
+
+
+def get_user_metadata():
+    """
+    Return the current user's metadata dict (full_name, role) from the auth record.
+    Used to bootstrap the profile after email confirmation.
+    """
+    try:
+        response = get_client().auth.get_user()
+        if response and response.user:
+            return response.user.user_metadata or {}
+    except Exception:
+        pass
+    return {}
 
 
 def sign_in(email, password):
