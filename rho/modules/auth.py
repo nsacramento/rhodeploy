@@ -31,14 +31,34 @@ def sign_up(email, password):
 def sign_in(email, password):
     """
     Sign in to an existing Rho account.
-    Returns the user dict on success; raises on failure (e.g. wrong password).
+    Returns the user dict (including refresh_token) on success; raises on failure.
     """
     response = get_client().auth.sign_in_with_password(
         {"email": email, "password": password}
     )
     if not response.user:
         raise RuntimeError(f"Sign-in failed: {response}")
-    return {"id": response.user.id, "email": response.user.email}
+    refresh_token = response.session.refresh_token if response.session else None
+    return {"id": response.user.id, "email": response.user.email, "refresh_token": refresh_token}
+
+
+def try_restore_session(refresh_token):
+    """
+    Restore a Supabase session from a saved refresh token.
+    Returns (email, new_refresh_token) on success, or (None, None) on failure.
+    Rotates the refresh token on every successful restore.
+    """
+    try:
+        sb = get_client()
+        response = sb.auth.refresh_session(refresh_token)
+        if response and response.session and response.session.user:
+            return (
+                response.session.user.email,
+                response.session.refresh_token,
+            )
+    except Exception:
+        pass
+    return None, None
 
 
 def sign_out():

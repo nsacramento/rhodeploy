@@ -10,6 +10,8 @@ import pandas as pd
 import os
 import sys
 import io
+from datetime import datetime, timedelta
+import extra_streamlit_components as stx
 from datetime import datetime as _dt
 import matplotlib
 matplotlib.use("Agg")
@@ -139,11 +141,87 @@ td.cell-total-green { background: #16a34a; color: white; text-align: center; fon
 td.cell-total-yellow { background: #ca8a04; color: white; text-align: center; font-weight: 700; }
 td.cell-total-red { background: #dc2626; color: white; text-align: center; font-weight: 700; }
 td.cell-total-blank { background: #e2e8f0; color: #94a3b8; text-align: center; }
+
+/* ═══ Mobile — iPhone (≤480px) ════════════════════════════════════════════ */
+@media screen and (max-width: 480px) {
+    /* Reduce page padding */
+    .block-container {
+        padding: 0.75rem 0.5rem 2rem !important;
+    }
+
+    /* Stack all columns vertically */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 0 !important;
+    }
+    [data-testid="stHorizontalBlock"] > div {
+        min-width: 100% !important;
+        width: 100% !important;
+        flex: 0 0 100% !important;
+    }
+
+    /* Nav segmented control — horizontal scroll, no scrollbar */
+    [data-testid="stSegmentedControl"] {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+    }
+    [data-testid="stSegmentedControl"]::-webkit-scrollbar { display: none !important; }
+    [data-testid="stSegmentedControl"] > div {
+        min-width: max-content !important;
+    }
+
+    /* Metric cards — smaller values */
+    [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+    [data-testid="stMetricLabel"] { font-size: 0.72rem !important; }
+
+    /* Dataframe / tables — horizontal scroll */
+    [data-testid="stDataFrame"], .stDataFrame, .element-container table {
+        overflow-x: auto !important;
+        display: block !important;
+    }
+
+    /* Headers */
+    h1 { font-size: 1.5rem !important; }
+    h2 { font-size: 1.2rem !important; }
+    h3 { font-size: 1.05rem !important; }
+
+    /* Buttons — full width */
+    [data-testid="stButton"] button { min-width: 100%; }
+}
+
+/* ═══ iPad mini portrait (481–820px) ══════════════════════════════════════ */
+@media screen and (min-width: 481px) and (max-width: 820px) {
+    .block-container {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    /* Nav — horizontal scroll */
+    [data-testid="stSegmentedControl"] {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        scrollbar-width: none !important;
+    }
+    [data-testid="stSegmentedControl"]::-webkit-scrollbar { display: none !important; }
+    [data-testid="stSegmentedControl"] > div { min-width: max-content !important; }
+
+    /* Dataframe / tables — horizontal scroll */
+    [data-testid="stDataFrame"], .stDataFrame, .element-container table {
+        overflow-x: auto !important;
+        display: block !important;
+    }
+
+    /* Allow 4-wide metric rows to wrap into 2×2 */
+    [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
+    [data-testid="stHorizontalBlock"] > div { min-width: 48% !important; flex: 0 0 48% !important; }
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ── Module imports ────────────────────────────────────────────────────────────
-from rho.modules.auth       import sign_in, sign_up, sign_out, get_user_id
+from rho.modules.auth       import sign_in, sign_up, sign_out, get_user_id, try_restore_session
 from rho.modules.insights   import get_preflight_brief, _derive_category, _format_sky
 from rho.modules.comms      import get_comms
 from rho.modules.kneeboard  import generate_kneeboard
@@ -197,6 +275,8 @@ for key, default in [
     ("feedback_ids",          None),   # list of unique feedback entry IDs (int)
     ("feedback_next_id",      0),      # counter for next feedback entry ID
     ("disclaimer_accepted",   False),  # must click through once per session
+    ("clear_auth_cookie",     False),  # set True on sign-out to trigger cookie deletion
+    ("_restore_attempted",    False),  # prevents repeated restore attempts per session
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -365,7 +445,7 @@ def show_disclaimer():
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-def show_auth():
+def show_auth(cookie_manager):
     # Aviation sky background
     st.markdown("""
     <style>
@@ -445,7 +525,15 @@ def show_auth():
                 pw    = st.text_input("Password", type="password")
                 if st.form_submit_button("Sign In", use_container_width=True):
                     try:
-                        sign_in(email, pw)
+                        result = sign_in(email, pw)
+                        # Persist refresh token in browser cookie
+                        try:
+                            rt = result.get("refresh_token") if result else None
+                            if rt:
+                                cookie_manager.set("rho_refresh", rt,
+                                                   expires_at=datetime.now() + timedelta(days=30))
+                        except Exception:
+                            pass
                         st.session_state.authenticated = True
                         st.session_state.user_email    = email
                         # Preserve invite token across rerun, redirect to Profile
@@ -476,7 +564,15 @@ def show_auth():
                         # Email confirmation is required — try signing in immediately,
                         # but gracefully handle the "not confirmed" case.
                         try:
-                            sign_in(email, pw)
+                            result = sign_in(email, pw)
+                            # Persist refresh token in browser cookie
+                            try:
+                                rt = result.get("refresh_token") if result else None
+                                if rt:
+                                    cookie_manager.set("rho_refresh", rt,
+                                                       expires_at=datetime.now() + timedelta(days=30))
+                            except Exception:
+                                pass
                             create_or_update_profile(full_name=full_name, role=role)
                             st.session_state.authenticated = True
                             st.session_state.user_email    = email
@@ -564,6 +660,9 @@ def show_nav():
                       "aircraft_type", "aircraft_tail", "generated_invite_link",
                       "invite_email", "feedback_ids"):
                 st.session_state[k] = False if k == "authenticated" else None
+            st.session_state.disclaimer_accepted = False
+            st.session_state.clear_auth_cookie   = True
+            st.session_state._restore_attempted  = True
             st.rerun()
 
     # ── Nav strip — segmented control ────────────────────────────────────────
@@ -2878,8 +2977,44 @@ def page_guide():
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    # ── Cookie manager — must be first to read browser cookies ────────────────
+    cookie_manager = stx.CookieManager(key="rho_cm")
+
+    # ── Clear cookie on sign-out ──────────────────────────────────────────────
+    if st.session_state.get("clear_auth_cookie"):
+        try:
+            cookie_manager.delete("rho_refresh")
+        except Exception:
+            pass
+        st.session_state.clear_auth_cookie = False
+
+    # ── Try to restore session from saved refresh token ───────────────────────
+    if not st.session_state.authenticated and not st.session_state.get("_restore_attempted"):
+        st.session_state._restore_attempted = True
+        try:
+            saved_token = cookie_manager.get("rho_refresh")
+            if saved_token:
+                email, new_token = try_restore_session(saved_token)
+                if email and new_token:
+                    try:
+                        cookie_manager.set("rho_refresh", new_token,
+                                           expires_at=datetime.now() + timedelta(days=30))
+                    except Exception:
+                        pass
+                    st.session_state.authenticated      = True
+                    st.session_state.user_email         = email
+                    st.session_state.disclaimer_accepted = True  # returning user — skip disclaimer
+                    st.rerun()
+                else:
+                    try:
+                        cookie_manager.delete("rho_refresh")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     if not st.session_state.authenticated:
-        show_auth()
+        show_auth(cookie_manager)
         return
 
     if not st.session_state.disclaimer_accepted:

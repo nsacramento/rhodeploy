@@ -7,3 +7,4 @@ contextily
 reportlab
 requests
 python-dotenv
+extra-streamlit-components
