@@ -102,6 +102,25 @@ def accept_invite(token):
     return {"ok": True, "student_id": student_id}
 
 
+def cancel_invite(token):
+    """
+    Cancel a pending invite by token.
+    Only the student who created the invite should call this (RLS enforces student_id).
+    """
+    sb = get_client()
+    sb.table("instructor_invites").update({"status": "cancelled"}).eq("token", token).execute()
+
+
+def remove_instructor_link():
+    """
+    Remove the current student's accepted instructor connection.
+    Deletes the instructor_students row where student_id = current user.
+    """
+    sb  = get_client()
+    uid = sb.auth.get_user().user.id
+    sb.table("instructor_students").delete().eq("student_id", uid).execute()
+
+
 # ── Student data (instructor reads) ───────────────────────────────────────────
 
 def get_student_flights(student_id):

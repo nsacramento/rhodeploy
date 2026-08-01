@@ -171,6 +171,7 @@ from rho.modules.instructor import (
     get_student_flights, get_student_skill_log,
     save_instructor_ratings, get_instructor_ratings,
     get_all_student_ratings,
+    cancel_invite, remove_instructor_link,
 )
 from rho.modules.aircraft import (
     AIRCRAFT_OPTIONS, AIRCRAFT_DISPLAY,
@@ -195,6 +196,7 @@ for key, default in [
     ("aircraft_tail",         None),   # default tail number (e.g. 'N12345')
     ("feedback_ids",          None),   # list of unique feedback entry IDs (int)
     ("feedback_next_id",      0),      # counter for next feedback entry ID
+    ("disclaimer_accepted",   False),  # must click through once per session
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -298,6 +300,69 @@ def _progress_html(pct, color="#15803d"):
     )
 
 
+# ── Disclaimer ────────────────────────────────────────────────────────────────
+
+def show_disclaimer():
+    """Full-screen disclaimer shown once per session after login."""
+    st.markdown("""
+    <style>
+    .disclaimer-box {
+        background: #ffffff;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 2rem 2.5rem;
+        max-width: 680px;
+        margin: 3rem auto;
+    }
+    .disclaimer-title {
+        font-size: 1.3rem;
+        font-weight: 800;
+        color: #1e293b;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .disclaimer-body {
+        font-size: 0.88rem;
+        color: #334155;
+        line-height: 1.7;
+    }
+    .disclaimer-body li {
+        margin-bottom: 0.5rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    _, col, _ = st.columns([1, 3, 1])
+    with col:
+        st.markdown("""
+        <div class="disclaimer-box">
+          <div class="disclaimer-title">✈ Important Notice — Please Read Before Continuing</div>
+          <div class="disclaimer-body">
+            <p>By using Rho, you acknowledge and agree to the following:</p>
+            <ul>
+              <li><b>Reference and training purposes only.</b> Rho is an educational tool designed to support student pilot training. It does not replace official FAA publications, your Pilot's Operating Handbook, your certified flight instructor (CFI), or any other authoritative aviation resource.</li>
+              <li><b>Not a legal logbook.</b> Flight records entered in Rho do not constitute a legal pilot logbook under 14 CFR Part 61. You are solely responsible for maintaining an accurate and compliant logbook as required by the FAA.</li>
+              <li><b>Go/No-Go is advisory only.</b> The go/no-go assessment is an automated interpretation of weather and condition data. It is a training aid and situational awareness tool — it does not constitute a directive or authorization to fly. The pilot-in-command (PIC) bears full responsibility for all preflight decisions.</li>
+              <li><b>Information may not be current.</b> Weather data, NOTAMs, TFRs, airspace information, and other content are fetched from third-party sources and may be delayed, incomplete, or inaccurate. Always verify critical information through official FAA and NOAA sources before flight.</li>
+              <li><b>FAA and official sources are authoritative.</b> In any conflict between information displayed in Rho and official FAA, NOAA, or regulatory sources, the official source governs. Visit <a href="https://www.faa.gov" target="_blank">faa.gov</a> and <a href="https://aviationweather.gov" target="_blank">aviationweather.gov</a> for authoritative data.</li>
+              <li><b>No liability.</b> Rho and its developers assume no liability for decisions made based on information provided by this application. Use of Rho is at your own risk.</li>
+            </ul>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if st.button(
+            "I Understand & Agree — Continue to Rho ✈",
+            type="primary",
+            use_container_width=True,
+            key="disclaimer_agree_btn",
+        ):
+            st.session_state.disclaimer_accepted = True
+            st.rerun()
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def show_auth():
@@ -397,7 +462,15 @@ def show_auth():
                 pw        = st.text_input("Password (min 6 chars)", type="password")
                 full_name = st.text_input("Full Name", placeholder="First Last")
                 role      = st.selectbox("I am a …", ["student", "instructor"])
+                tos_ok    = st.checkbox(
+                    "I agree that Rho is for reference and training purposes only, "
+                    "does not constitute a legal logbook, and that I am the pilot-in-command "
+                    "responsible for all flight decisions."
+                )
                 if st.form_submit_button("Create Account", use_container_width=True):
+                    if not tos_ok:
+                        st.error("Please agree to the terms above before creating an account.")
+                        st.stop()
                     try:
                         sign_up(email, pw)
                         sign_in(email, pw)
@@ -2075,15 +2148,23 @@ def page_profile():
     # ── Instructor connection (students only) ─────────────────────────────────
     if (prof.get("role") or st.session_state.user_role) == "student":
         st.subheader("Instructor Connection")
+        import urllib.parse
         try:
             instructor = get_my_instructor()
         except Exception:
             instructor = None
 
         if instructor:
-            st.success(
-                f"Connected to: **{instructor.get('full_name') or instructor.get('email')}**"
-            )
+            instr_name = instructor.get("full_name") or instructor.get("email", "Unknown")
+            st.success(f"Connected to: **{instr_name}**")
+            st.caption("Your instructor can view your flights and rate your ACS skills from the Students tab.")
+            if st.button("Remove Instructor Connection", key="remove_instr_btn"):
+                try:
+                    remove_instructor_link()
+                    st.success("Instructor connection removed.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Could not remove connection: {e}")
         else:
             st.info("No instructor connected yet.")
             st.caption(
@@ -2091,7 +2172,6 @@ def page_profile():
                 "When they click it and log in (or create an account), they'll be linked to you automatically. "
                 "One instructor can have multiple students — each student generates their own invite."
             )
-            import urllib.parse
             instr_email = st.text_input(
                 "Instructor's email (optional — pre-fills the share message)",
                 value=st.session_state.get("invite_email", ""),
@@ -2125,13 +2205,33 @@ def page_profile():
                 )
                 st.caption("Link expires in 7 days.")
 
-        # Show pending invites
+        # ── Pending invites ───────────────────────────────────────────────────
         try:
             pending = get_pending_invites()
         except Exception:
             pending = []
         if pending:
-            st.caption(f"{len(pending)} pending invite(s) outstanding.")
+            st.markdown(f"**{len(pending)} pending invite(s)**")
+            base = os.environ.get("RHO_BASE_URL", "http://localhost:8501")
+            for inv in pending:
+                token = inv.get("token", "")
+                inv_email = inv.get("instructor_email") or "no email specified"
+                inv_link  = f"{base}/?invite={token}"
+                with st.container():
+                    c_lbl, c_link, c_cancel = st.columns([2, 4, 1])
+                    with c_lbl:
+                        st.caption(f"To: {inv_email}")
+                    with c_link:
+                        st.code(inv_link, language=None)
+                    with c_cancel:
+                        if st.button("Cancel", key=f"cancel_inv_{token}"):
+                            try:
+                                cancel_invite(token)
+                                if st.session_state.generated_invite_link and token in st.session_state.generated_invite_link:
+                                    st.session_state.generated_invite_link = None
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Could not cancel: {e}")
 
     # ── Students (instructors only) ───────────────────────────────────────────
     elif (prof.get("role") or st.session_state.user_role) == "instructor":
@@ -2759,6 +2859,10 @@ def page_guide():
 def main():
     if not st.session_state.authenticated:
         show_auth()
+        return
+
+    if not st.session_state.disclaimer_accepted:
+        show_disclaimer()
         return
 
     page = show_nav()
