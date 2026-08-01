@@ -104,11 +104,11 @@ def accept_invite(token):
 
 def cancel_invite(token):
     """
-    Cancel a pending invite by token.
+    Cancel a pending invite by deleting the row.
     Only the student who created the invite should call this (RLS enforces student_id).
     """
     sb = get_client()
-    sb.table("instructor_invites").update({"status": "cancelled"}).eq("token", token).execute()
+    sb.table("instructor_invites").delete().eq("token", token).execute()
 
 
 def remove_instructor_link():

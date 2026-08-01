@@ -473,20 +473,41 @@ def show_auth():
                         st.stop()
                     try:
                         sign_up(email, pw)
-                        sign_in(email, pw)
-                        create_or_update_profile(full_name=full_name, role=role)
-                        st.session_state.authenticated = True
-                        st.session_state.user_email    = email
-                        st.session_state.user_role     = role
-                        st.session_state.user_name     = full_name
-                        # Preserve invite token across rerun, redirect to Profile
-                        _tok = st.query_params.get("invite")
-                        if _tok:
-                            st.session_state.pending_invite = _tok
-                            st.session_state.current_page   = "profile"
-                        st.rerun()
+                        # Email confirmation is required — try signing in immediately,
+                        # but gracefully handle the "not confirmed" case.
+                        try:
+                            sign_in(email, pw)
+                            create_or_update_profile(full_name=full_name, role=role)
+                            st.session_state.authenticated = True
+                            st.session_state.user_email    = email
+                            st.session_state.user_role     = role
+                            st.session_state.user_name     = full_name
+                            # Preserve invite token across rerun, redirect to Profile
+                            _tok = st.query_params.get("invite")
+                            if _tok:
+                                st.session_state.pending_invite = _tok
+                                st.session_state.current_page   = "profile"
+                            st.rerun()
+                        except Exception as signin_err:
+                            err_lower = str(signin_err).lower()
+                            if "not confirmed" in err_lower or "email" in err_lower:
+                                st.info(
+                                    f"**Almost there!** A confirmation link has been sent to **{email}**. "
+                                    f"Click the link in that email to activate your account, "
+                                    f"then return here and sign in."
+                                )
+                            else:
+                                raise signin_err
                     except Exception as e:
-                        st.error(f"Sign-up failed: {e}")
+                        err_lower = str(e).lower()
+                        if "not confirmed" in err_lower or "email" in err_lower:
+                            st.info(
+                                f"**Almost there!** A confirmation link has been sent to **{email}**. "
+                                f"Click the link in that email to activate your account, "
+                                f"then return here and sign in."
+                            )
+                        else:
+                            st.error(f"Sign-up failed: {e}")
 
 
 # ── Navigation ────────────────────────────────────────────────────────────────
