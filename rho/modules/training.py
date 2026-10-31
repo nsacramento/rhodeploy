@@ -5,9 +5,10 @@ Content follows the FAA Airplane Flying Handbook (FAA-H-8083-3C), the AIM, and
 the Private Pilot – Airplane ACS. Standards quoted are Private Pilot ACS
 tolerances. Task IDs match acs.py (e.g. "VII-A").
 
-Text may contain aircraft placeholders that are filled from aircraft.py:
-    {vx} {vy} {vg} {va} {vfe} {vs0} {vs1} {vno} {ac}
-Unknown aircraft -> "POH" wording.
+Text may contain aircraft placeholders filled from aircraft.py V-speeds
+({vx} {vy} {vg} {va} {vfe} {vs0} {vs1} {vno} {ac}) and from TRAINING_NUMBERS
+(power settings, flap speeds, pattern speeds — 172N / 172S so far).
+Unknown values -> "(per POH)".
 
 Public API
     PROCEDURES, TECHNIQUES        lists of item dicts
@@ -19,11 +20,37 @@ Public API
 ALWAYS defer to the aircraft POH and the student's CFI.
 """
 
-# ── Placeholder filling ───────────────────────────────────────────────────────
+# ── Aircraft training numbers (power settings, flap speeds, target speeds) ────
+# Typical flight-school numbers. Your school's / CFI's numbers win.
+# Keyed by aircraft "model" from aircraft.py. Missing model -> "(per POH)".
+
+TRAINING_NUMBERS = {
+    "172N": {
+        "sf_entry_rpm": "1,500–1,700 rpm", "sf_hold_rpm": "~2,000 rpm",
+        "sf_slow": "60 kt", "sf_target": "55 kt",
+        "vfe10": "110 kt", "vfe_full": "85 kt", "flaps_full": "30°",
+        "pos_approach": "65 kt", "pon_speed": "55–60 kt",
+        "cruise_rpm": "2,300 rpm", "st_speed": "90–95 kt", "gr_speed": "~90 kt",
+        "dw_rpm": "2,200 rpm", "dw_speed": "85–90 kt", "abeam_rpm": "1,500 rpm",
+        "abeam_speed": "75–80 kt", "base_speed": "70 kt", "final_speed": "65 kt",
+        "carb": "Carb heat ON",
+    },
+    "172S": {
+        "sf_entry_rpm": "1,500–1,700 rpm", "sf_hold_rpm": "~2,000 rpm",
+        "sf_slow": "60 kt", "sf_target": "55 kt",
+        "vfe10": "110 kt", "vfe_full": "85 kt", "flaps_full": "30°",
+        "pos_approach": "65 kt", "pon_speed": "55–60 kt",
+        "cruise_rpm": "2,400 rpm", "st_speed": "90–95 kt", "gr_speed": "~90 kt",
+        "dw_rpm": "2,200 rpm", "dw_speed": "85–90 kt", "abeam_rpm": "1,500 rpm",
+        "abeam_speed": "75–80 kt", "base_speed": "70 kt", "final_speed": "65 kt",
+        "carb": "Fuel pump/mixture per checklist (fuel injected — no carb heat)",
+    },
+}
+
 
 class _Speeds(dict):
     def __missing__(self, k):
-        return "(see POH)"
+        return "(per POH)"
 
 
 def fill(text, aircraft=None):
@@ -32,6 +59,9 @@ def fill(text, aircraft=None):
     for k in ("vx", "vy", "vg", "va", "vfe", "vs0", "vs1", "vno"):
         if ac.get(k):
             vals[k] = f"{ac[k]} kt"
+    vals.update(TRAINING_NUMBERS.get(ac.get("model") or "", {}))
+    if "carb" not in vals:
+        vals["carb"] = "Carb heat ON (if carbureted)"
     vals["ac"] = ac.get("display") or "your aircraft"
     try:
         return text.format_map(vals)
@@ -39,25 +69,37 @@ def fill(text, aircraft=None):
         return text
 
 
+def has_numbers(aircraft):
+    """True when the library has specific power/flap numbers for this aircraft."""
+    return bool(aircraft) and (aircraft.get("model") in TRAINING_NUMBERS)
+
+
+def all_text(item):
+    """Every string in an item (for search)."""
+    out = [item.get("title", ""), item.get("summary", ""), item.get("why", "")]
+    for k in ("setup", "steps", "recovery", "standards", "errors", "watch"):
+        out += item.get(k) or []
+    for _, steps in item.get("phases") or []:
+        out += steps
+    return " ".join(out)
+
+
 # ── Shared snippets ───────────────────────────────────────────────────────────
 
-_CLEARING = ("Clearing turns: two 90° turns (or one 180°) to look for traffic, "
-             "and confirm you're over terrain where you could land.")
-_ALT_1500 = "Choose an entry altitude so you recover no lower than 1,500 ft AGL."
-_STALL_RECOVERY = [
-    "**Reduce angle of attack** — forward elevator pressure until the stall warning and buffet stop. "
-    "This comes first, always.",
-    "**Roll wings level** with coordinated aileron and rudder.",
-    "**Add power** as needed — full power, carb heat off (if equipped); expect left-turning tendency, "
-    "so add right rudder.",
-    "**Return to the desired flight path** — climb attitude at Vx {vx} / Vy {vy}; retract flaps in "
-    "increments only after a positive rate of climb and adequate airspeed. Avoid a secondary stall "
-    "by not pulling up too quickly.",
+_CLEAR = "Clearing turns"
+_BUG = "Choose / bug heading + altitude (recover ≥ 1,500 ft AGL)"
+_STALL_RECOVER = [
+    "Nose down — reduce angle of attack (horn/buffet stops)",
+    "Wings level — coordinated aileron + rudder",
+    "Full power, carb heat OFF — right rudder",
+    "Pitch for climb: Vx {vx} / Vy {vy}",
+    "Flaps up in steps (20° → 10° → 0°) after positive rate",
+    "Return to altitude + heading",
 ]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PROCEDURES — ACS maneuvers
+# PROCEDURES — ACS maneuvers (punchy step-by-step)
 # ══════════════════════════════════════════════════════════════════════════════
 
 PROCEDURES = [
@@ -65,240 +107,216 @@ PROCEDURES = [
         "key": "slow_flight",
         "title": "Slow Flight",
         "acs": "VII-A",
-        "summary": "Controlling the airplane at an airspeed just above the stall warning.",
-        "why": "Builds feel for the airplane at the low speeds you'll be at during takeoff and landing, "
-               "where controls are sluggish and a stall is close.",
-        "setup": [_CLEARING, _ALT_1500,
-                  "Pick a heading and an outside reference (landmark on the horizon).",
-                  "Carb heat ON (if equipped) before reducing power."],
+        "summary": "Fly just above the stall warning. Pitch = airspeed, power = altitude.",
         "steps": [
-            "Reduce power well below cruise. Hold altitude by gradually raising the nose as speed bleeds off.",
-            "Below Vfe ({vfe}), extend flaps in increments to the configuration your CFI/examiner specifies "
-            "(often full landing flaps).",
-            "Approach the target airspeed — a speed where any increase in angle of attack, load factor, or "
-            "reduction in power would trigger the stall warning. Typically a few knots above stall "
-            "(Vs0 {vs0} / Vs1 {vs1}).",
-            "Add power to hold the target speed. In slow flight, **pitch controls airspeed and power "
-            "controls altitude.**",
-            "Keep the ball centered — high power at low speed needs noticeable right rudder.",
-            "Fly straight-and-level, level turns, climbs and descents as assigned. Use shallow, "
-            "coordinated turns.",
-            "Recover: full power (carb heat off), lower the nose to hold altitude as you accelerate, "
-            "retract flaps in increments (first one notch, then the rest as speed passes Vx/Vy), and "
-            "return to cruise.",
+            _CLEAR,
+            _BUG,
+            "{carb}",
+            "Power {sf_entry_rpm}",
+            "Slight back pressure — hold altitude",
+            "Flaps 10° below {vfe10}",
+            "Flaps 20° below {vfe_full}",
+            "Flaps {flaps_full} below {vfe_full}",
+            "Airspeed to {sf_slow}",
+            "Add power to {sf_hold_rpm}",
+            "Final speed {sf_target} — right rudder, ball centered",
+            "Fly straight, turns, climbs, descents as assigned",
         ],
-        "standards": ["Altitude ±100 ft", "Heading ±10°", "Airspeed +10 / −0 kt",
-                      "Specified bank angle ±10°", "No stall warning"],
-        "errors": [
-            "Triggering the stall horn — you went too slow or pulled too hard.",
-            "Losing altitude while slowing down (not enough back pressure / power added too late).",
-            "Not enough right rudder; ball out to the right.",
-            "Staring at the airspeed indicator instead of flying an attitude outside.",
-            "Dumping all the flaps at once on recovery — causes a sink.",
+        "recovery": [
+            "Full power, carb heat OFF",
+            "Nose down to hold altitude as speed builds",
+            "Flaps up in steps (20° → 10° → 0°)",
+            "Cruise power, trim",
         ],
-        "safety": "Stall warning = you've exceeded the standard. Keep scanning for traffic; you're slow and nose-high.",
-        "source": "Airplane Flying Handbook — Maintaining Aircraft Control (slow flight)",
+        "standards": ["Altitude ±100 ft", "Heading ±10°", "Airspeed +10 / −0 kt", "Bank ±10°",
+                      "No stall horn"],
+        "watch": ["Stall horn = too slow", "Losing altitude while slowing", "Not enough right rudder"],
+        "source": "Airplane Flying Handbook — Slow flight",
     },
     {
         "key": "power_off_stall",
         "title": "Power-Off Stall (approach to landing)",
         "acs": "VII-B",
-        "summary": "Simulates stalling on approach or in the flare, in landing configuration.",
-        "why": "Most stall/spin accidents happen in the pattern — especially the base-to-final turn. "
-               "This teaches you to recognize and recover.",
-        "setup": [_CLEARING, _ALT_1500, "Carb heat ON (if equipped)."],
+        "summary": "Stall in landing configuration — like the flare or base-to-final.",
         "steps": [
-            "Reduce power and slow below Vfe ({vfe}). Configure as for landing (flaps as specified).",
-            "Establish a stabilized descent at your normal approach speed, straight ahead or in a turn "
-            "of up to 20° bank if assigned.",
-            "Reduce power to idle and smoothly raise the nose to an attitude that will cause a stall. "
-            "Keep the ball centered.",
-            "Recognize the cues: stall horn, buffet, mushy controls, high nose attitude, then the break / sink.",
-            "Recover promptly when the stall occurs (or when your CFI calls it):",
-        ] + _STALL_RECOVERY,
-        "standards": ["Heading ±10° (straight) or bank ±10° (turning, up to 20°)",
-                      "Recover promptly after the stall occurs",
-                      "Recover no lower than 1,500 ft AGL",
-                      "No secondary stall, excessive altitude loss, or spin"],
-        "errors": [
-            "Adding power before lowering the nose — the wing is still stalled.",
-            "Too much forward pressure (floating in your seat / large altitude loss).",
-            "Pulling up too fast after the break → secondary stall.",
-            "Retracting all flaps at once → sink, possible re-stall.",
-            "Uncoordinated controls → a wing drops. Fix with coordinated rudder, not aggressive aileron.",
+            _CLEAR,
+            _BUG,
+            "{carb}",
+            "Power {sf_entry_rpm} — hold altitude",
+            "Flaps 10° below {vfe10}",
+            "Flaps 20° → {flaps_full} below {vfe_full}",
+            "At {pos_approach}: pitch for a stabilized descent",
+            "Power IDLE",
+            "Raise nose smoothly to landing attitude — hold heading (or ≤ 20° bank)",
+            "Hold it: horn → buffet → break",
         ],
-        "safety": "If a wing drops sharply or rotation starts, apply spin-recovery thinking: power idle, "
-                  "ailerons neutral, opposite rudder, nose down.",
-        "source": "Airplane Flying Handbook — Maintaining Aircraft Control (stalls)",
+        "recovery": _STALL_RECOVER,
+        "standards": ["Heading ±10° / bank ±10° (≤ 20°)", "Recover promptly after the stall",
+                      "Recover ≥ 1,500 ft AGL", "No secondary stall or spin"],
+        "watch": ["Power before nose down", "Pulling up too fast → secondary stall",
+                  "All flaps up at once → sink"],
+        "source": "Airplane Flying Handbook — Stalls",
     },
     {
         "key": "power_on_stall",
         "title": "Power-On Stall (departure)",
         "acs": "VII-C",
-        "summary": "Simulates stalling on takeoff or climb-out with power on.",
-        "why": "Pulling too steeply right after takeoff — or while distracted on departure — leads to "
-               "this stall close to the ground.",
-        "setup": [_CLEARING, _ALT_1500],
+        "summary": "Stall in takeoff configuration with climb power — like pulling too hard after takeoff.",
         "steps": [
-            "Reduce power and slow to about liftoff speed. Configure for takeoff (flaps as your POH "
-            "specifies for takeoff).",
-            "At liftoff speed, set takeoff or climb power (ACS allows no less than 65% of available power).",
-            "Smoothly raise the nose to an attitude that will induce a stall — straight ahead or in a "
-            "turn of up to 20° bank as assigned.",
-            "Hold heading with **plenty of right rudder**; power + high angle of attack = strong left yaw.",
-            "Recognize the cues and recover promptly when the stall occurs:",
-        ] + _STALL_RECOVERY,
-        "standards": ["Heading ±10° (straight) or bank ±10° (turning, up to 20°)",
-                      "Power no less than 65% available",
-                      "Recover promptly after the stall occurs",
-                      "Recover no lower than 1,500 ft AGL"],
-        "errors": [
-            "Not enough right rudder → left wing drops at the break.",
-            "Extremely high pitch attitude — use reduced power (≥65%) to keep it reasonable.",
-            "Slow recovery or holding back pressure through the stall.",
+            _CLEAR,
+            _BUG,
+            "Power {sf_entry_rpm} — hold altitude",
+            "Flaps as for takeoff (usually 0°–10°)",
+            "Slow to {pon_speed} (liftoff speed)",
+            "Full power (at least 65%)",
+            "Pitch up smoothly (~15–20° nose up)",
+            "Lots of right rudder — ball centered",
+            "Hold heading (or ≤ 20° bank) until the break",
         ],
-        "safety": "Power-on stalls can break sharply. Have your CFI demonstrate first.",
-        "source": "Airplane Flying Handbook — Maintaining Aircraft Control (stalls)",
+        "recovery": _STALL_RECOVER,
+        "standards": ["Heading ±10° / bank ±10° (≤ 20°)", "Power ≥ 65%",
+                      "Recover promptly after the stall", "Recover ≥ 1,500 ft AGL"],
+        "watch": ["Left wing drops — not enough right rudder", "Pitch way too high"],
+        "source": "Airplane Flying Handbook — Stalls",
     },
     {
         "key": "steep_turns",
         "title": "Steep Turns",
         "acs": "V-A",
-        "summary": "360° turns at 45° bank in both directions while holding altitude.",
-        "why": "Develops smooth coordination, energy control, and orientation at higher load factors.",
-        "setup": [_CLEARING, _ALT_1500,
-                  "Airspeed at or below maneuvering speed Va ({va} at max gross — Va is lower at lighter weights).",
-                  "Note your heading and pick a landmark to roll out on."],
+        "summary": "360° at 45° bank each way, holding altitude.",
         "steps": [
-            "Roll smoothly into a 45° bank with coordinated aileron and rudder.",
-            "Passing about 30° of bank, add back pressure to hold altitude and a little power to hold airspeed.",
-            "Hold the sight picture: the nose position on the horizon is your primary reference; "
-            "cross-check altimeter and attitude indicator.",
-            "Correct small altitude deviations with back pressure; correct big ones by shallowing the "
-            "bank slightly first.",
-            "Lead the rollout by about half the bank angle (~20° before your heading).",
-            "On rollout, release back pressure and reduce the added power so you don't balloon.",
-            "Roll directly into a turn the other way if assigned.",
+            _CLEAR,
+            _BUG,
+            "Power {cruise_rpm} — airspeed {st_speed} (at or below Va {va})",
+            "Pick a landmark on the entry heading",
+            "Roll into 45° bank",
+            "Passing 30°: add back pressure + ~100 rpm",
+            "Hold the sight picture — nose on the horizon",
+            "Lead rollout by ~20°",
+            "Roll out: release back pressure, power back",
+            "Roll straight into the turn the other way",
         ],
-        "standards": ["Bank 45° ±5°", "Altitude ±100 ft", "Airspeed ±10 kt",
-                      "Roll out on entry heading ±10°"],
-        "errors": [
-            "Losing altitude in the first 90° (back pressure too late).",
-            "Overbanking tendency — bank creeps past 45°.",
-            "Ballooning on rollout from holding back pressure.",
-            "Head-down flying; forgetting to look for traffic.",
-        ],
-        "safety": "Stay at or below Va. Load factor is 1.4 G at 45° — stall speed rises about 19%.",
-        "source": "Airplane Flying Handbook — Performance Maneuvers",
+        "standards": ["Bank 45° ±5°", "Altitude ±100 ft", "Airspeed ±10 kt", "Rollout heading ±10°"],
+        "watch": ["Sinking in the first 90°", "Bank creeping past 45°", "Ballooning on rollout"],
+        "source": "Airplane Flying Handbook — Performance maneuvers",
     },
     {
         "key": "ground_reference",
         "title": "Ground Reference Maneuvers",
         "acs": "V-B",
-        "summary": "Rectangular course, S-turns, and turns around a point — flying a ground track in wind.",
-        "why": "This is the traffic pattern in disguise: wind correction while dividing attention "
-               "inside and outside.",
-        "setup": ["Altitude 600–1,000 ft AGL; pick an area clear of obstacles and people, "
-                  "with a forced-landing field in mind.",
-                  "Determine wind direction (smoke, water, drift) and enter downwind.",
-                  "Clearing turn first."],
+        "summary": "Rectangular course, S-turns, turns around a point — fly a ground track in wind.",
         "steps": [
-            "**Rule of thumb: steepest bank when groundspeed is highest (directly downwind); shallowest "
-            "when groundspeed is lowest (directly upwind).**",
-            "*Rectangular course:* fly parallel to the field boundaries ~¼–½ mile out. Crab into the wind "
-            "on each leg. Turns from downwind are steeper; turns into headwind are shallower.",
-            "*S-turns:* cross a straight road perpendicular to the wind, flying semicircles of equal radius "
-            "on each side. Wings level exactly as you cross the road.",
-            "*Turns around a point:* enter downwind; bank no more than about 45° at the steepest point; "
-            "adjust bank continuously to keep a constant distance from the point.",
-            "Hold altitude and airspeed throughout; keep your eyes outside.",
+            "Pick a reference (field, road, or point) with a landing spot nearby",
+            "Clearing turn",
+            "Altitude 600–1,000 ft AGL",
+            "Power {cruise_rpm} — {gr_speed}",
+            "Find the wind",
+            "Enter downwind (45° to downwind for the rectangle)",
+            "Steepest bank downwind, shallowest upwind (max 45°)",
+            "Crab on straight legs",
+            "Eyes outside — glance at altimeter",
         ],
-        "standards": ["Altitude 600–1,000 ft AGL, ±100 ft", "Airspeed ±10 kt",
-                      "Correct for wind drift to maintain the track", "Divide attention inside/outside"],
-        "errors": ["Fixed bank angle (track drifts)", "Slipping or skidding in turns",
-                   "Altitude creep while looking at the ground", "Poor entry (not downwind)"],
-        "safety": "Low altitude — keep a landing spot in mind and watch for towers, birds, and wires.",
-        "source": "Airplane Flying Handbook — Ground Reference Maneuvers",
+        "standards": ["Altitude 600–1,000 AGL, ±100 ft", "Airspeed ±10 kt", "Correct for wind drift"],
+        "watch": ["Constant bank (track drifts)", "Altitude creep while looking down", "Towers & wires"],
+        "source": "Airplane Flying Handbook — Ground reference maneuvers",
+    },
+    {
+        "key": "pattern_practice",
+        "title": "Pattern Practice (takeoffs & landings)",
+        "acs": "III-B",
+        "summary": "The traffic pattern, leg by leg — power, flaps, speeds, calls.",
+        "phases": [
+            ("Departure / upwind", [
+                "Takeoff — climb at Vy {vy}",
+                "Past the runway end, within 300 ft of pattern altitude: turn crosswind",
+                "Level at pattern altitude (usually 1,000 ft AGL — check Chart Supplement)",
+                "Power {dw_rpm} — {dw_speed}",
+            ]),
+            ("Downwind", [
+                "About ½ mile from the runway, parallel to it",
+                "Before-landing checklist",
+                "Call: \"___ traffic, N___, left downwind runway __\"",
+            ]),
+            ("Abeam the numbers", [
+                "{carb}",
+                "Power {abeam_rpm}",
+                "Flaps 10° below {vfe10}",
+                "Pitch for {abeam_speed} — start descent",
+            ]),
+            ("Base (runway 45° behind you)", [
+                "Turn base — call it",
+                "Flaps 20° below {vfe_full}",
+                "{base_speed}",
+            ]),
+            ("Final", [
+                "Turn final — call it",
+                "Flaps {flaps_full}",
+                "{final_speed} — pick your aim point",
+                "Stabilized by 300 ft AGL or GO AROUND",
+                "Over the fence: power idle, flare, mains first",
+            ]),
+            ("Touch-and-go (only if your CFI approves)", [
+                "Stay on centerline — flaps UP, carb heat OFF",
+                "Full power — rotate, Vy {vy}",
+            ]),
+        ],
+        "standards": ["Pattern altitude ±100 ft", "Airspeed ±10 kt",
+                      "Approach speed +10 / −5 kt", "Touchdown within 400 ft of the point"],
+        "watch": ["Overshooting base-to-final — never skid it around with rudder",
+                  "Rushed checklist", "Unstable approach — go around"],
+        "source": "AIM 4-3-3; Airplane Flying Handbook — Approaches and landings",
     },
     {
         "key": "emergency_landing",
         "title": "Emergency Approach & Landing (engine failure)",
         "acs": "IX-B",
-        "summary": "Engine-out glide to a field: A-B-C-D-E.",
-        "why": "Engines rarely fail — but when they do, having the steps memorized is what saves you.",
-        "setup": ["In training your CFI pulls the power; they'll call a go-around at a safe altitude "
-                  "(often around 500 ft AGL away from an airport)."],
+        "summary": "A-B-C-D-E. Fly the airplane first.",
         "steps": [
-            "**A — Airspeed:** pitch for best glide **{vg}** immediately and trim. Every knot off "
-            "best glide costs distance.",
-            "**B — Best field:** pick a landing spot within gliding distance — into the wind if possible, "
-            "long and flat, no wires. Turn toward it now.",
-            "**C — Checklist (restart):** fuel selector BOTH/on, mixture RICH, carb heat ON, "
-            "primer IN & LOCKED, magnetos BOTH (try L/R), fuel pump ON if equipped. Use your POH flow.",
-            "**D — Declare:** 121.5 or the frequency you're on — \"MAYDAY ×3, callsign, position, "
-            "intentions.\" Squawk 7700.",
-            "**E — Execute:** fly a pattern to the field (a high key / low key or a normal downwind-base-final "
-            "if you have the altitude). Aim about one-third into the field; use flaps to steepen once you "
-            "have it made.",
-            "Before touchdown (if no restart): mixture idle cut-off, fuel OFF, magnetos OFF, master OFF "
-            "after final flap setting, doors unlatched. Touch down as slowly as possible, nose high.",
-            "**Engine failure right after takeoff:** lower the nose immediately and land roughly straight "
-            "ahead (within ~30° either side). Do not attempt to turn back unless you've trained it and "
-            "have the altitude.",
+            "**A**irspeed — best glide {vg}, trim",
+            "**B**est field — into the wind, within glide range, turn toward it",
+            "**C**hecklist — fuel BOTH, mixture RICH, carb heat ON, primer IN & locked, mags BOTH / try L-R",
+            "**D**eclare — 121.5, \"MAYDAY ×3\", squawk 7700",
+            "**E**xecute — fly a pattern to the field, aim ⅓ in, flaps when it's made",
+            "Before touchdown: mixture CUTOFF, fuel OFF, mags OFF, master OFF (after flaps), doors unlatched",
+            "Right after takeoff? Nose down, land ahead (±30°) — no turnback",
         ],
-        "standards": ["Best glide airspeed ±10 kt", "Select a suitable landing area within gliding distance",
-                      "Plan and follow a flight pattern to it", "Complete checklists and configure"],
-        "errors": ["Not establishing best glide immediately", "Picking a field behind you or too far",
-                   "Stretching the glide (pulling the nose up) — this shortens it",
-                   "Too fast / too high on final from not using a pattern"],
-        "safety": "Your POH checklist governs. Fly the airplane first — don't let the checklist distract "
-                  "you below ~1,000 ft AGL.",
-        "source": "Airplane Flying Handbook — Emergency Procedures",
+        "standards": ["Best glide ±10 kt", "Field within gliding distance", "Plan and fly a pattern",
+                      "Checklists complete"],
+        "watch": ["Late best glide", "Stretching the glide", "Field behind you"],
+        "source": "Airplane Flying Handbook — Emergency procedures",
     },
     {
         "key": "emergency_descent",
         "title": "Emergency Descent",
         "acs": "IX-A",
-        "summary": "Getting down fast — for fire, smoke, or a medical issue.",
-        "why": "When you need to be on the ground now, a steep spiraling descent loses altitude quickly "
-               "while keeping you over a spot.",
-        "setup": ["Clear the area below you."],
+        "summary": "Get down fast — fire, smoke, or medical.",
         "steps": [
-            "Power to idle; carb heat ON (if equipped).",
-            "Roll into a 30–45° bank (keeps positive G and lets you see below).",
-            "Lower the nose to establish a descent at a speed no higher than Vno ({vno}) — or Va ({va}) "
-            "if in turbulence. Use flaps only within Vfe ({vfe}) and as your POH recommends.",
-            "Monitor airspeed closely; roll out on a heading and level off at the target altitude.",
+            "Clear below",
+            "Power IDLE, {carb}",
+            "Roll into 30–45° bank",
+            "Nose down — speed ≤ Vno {vno} (≤ Va {va} if bumpy)",
+            "Flaps only below Vfe {vfe}, per POH",
+            "Roll out, level off at target altitude",
         ],
-        "standards": ["Appropriate airspeed +0 / −10 kt", "Level off at specified altitude ±100 ft"],
-        "errors": ["Exceeding Vno / Vfe", "Insufficient bank (slow descent rate)",
-                   "Forgetting to look below for traffic"],
-        "safety": "For an engine fire, follow your POH — it may call for a very high airspeed to blow out the fire.",
-        "source": "Airplane Flying Handbook — Emergency Procedures",
+        "standards": ["Airspeed +0 / −10 kt", "Level off ±100 ft"],
+        "watch": ["Overspeeding Vno / Vfe", "Bank too shallow"],
+        "source": "Airplane Flying Handbook — Emergency procedures",
     },
     {
         "key": "spin_awareness",
         "title": "Spin Awareness",
         "acs": "VII-D",
-        "summary": "A spin = stalled wing + yaw. Know what causes it and how to recover.",
-        "why": "Base-to-final skidding turns, low and slow, are the classic stall/spin accident.",
-        "setup": ["Knowledge task — most training airplanes are not approved for intentional spins "
-                  "(check the POH category and placards)."],
+        "summary": "Spin = stall + yaw. Stay coordinated. Recovery: PARE.",
         "steps": [
-            "Prevention: stay coordinated (ball centered), especially in turns at low airspeed. Never "
-            "\"rudder the nose around\" on base-to-final.",
-            "Recovery (**PARE**), per POH:",
-            "**P** — Power to idle.",
-            "**A** — Ailerons neutral.",
-            "**R** — Rudder full opposite the rotation.",
-            "**E** — Elevator briskly forward to break the stall.",
-            "When rotation stops: neutralize rudder, roll wings level, smoothly recover from the dive.",
+            "**P**ower — IDLE",
+            "**A**ilerons — NEUTRAL",
+            "**R**udder — FULL opposite the rotation",
+            "**E**levator — briskly FORWARD",
+            "Rotation stops: rudder neutral, wings level, ease out of the dive",
         ],
-        "standards": ["Explain aerodynamic factors, flight situations, and recovery procedure"],
-        "errors": ["Using aileron to pick up a dropping wing in a stall",
-                   "Skidding turns with inside rudder at low speed"],
-        "safety": "If you overshoot final, go around — don't tighten the turn with rudder.",
-        "source": "Airplane Flying Handbook — Maintaining Aircraft Control (spins)",
+        "standards": ["Explain causes, situations, and recovery (knowledge task)"],
+        "watch": ["Skidding base-to-final", "Aileron to lift a dropping wing in a stall"],
+        "source": "Airplane Flying Handbook — Spins",
     },
 ]
 

@@ -231,7 +231,8 @@ from rho.modules.airport_diagram import (
 from rho.modules.navlog    import generate_navlog
 from rho.modules.training  import (
     PROCEDURES, TECHNIQUES, ITEMS as TRAINING_ITEMS, PROCEDURE_KEYS,
-    fill as training_fill, recommend_for_brief,
+    fill as training_fill, recommend_for_brief, has_numbers as training_has_numbers,
+    all_text as training_all_text,
 )
 from rho.modules.reports   import generate_readiness_report, generate_lesson_plan
 from rho.modules.feedback  import submit_feedback, FEEDBACK_FEATURES
@@ -3080,9 +3081,9 @@ def page_guide():
     c3, c4 = st.columns(2)
     with c3:
         st.markdown("**Procedures**")
-        st.markdown("Step-by-step guides for checkride maneuvers — slow flight, stalls, steep turns, "
-                    "ground reference, emergency landing and descent, spin awareness — with the ACS "
-                    "standards and V-speeds for your aircraft.")
+        st.markdown("Punchy step-by-step flows for checkride maneuvers — slow flight, stalls, steep turns, "
+                    "ground reference, pattern practice, emergency landing and descent, spin awareness — "
+                    "with ACS standards, V-speeds, and typical power/flap numbers for your aircraft.")
     with c4:
         st.markdown("**Techniques**")
         st.markdown("Crosswind and gusty-wind landings, short- and soft-field operations, slips, go-arounds, "
@@ -3120,7 +3121,43 @@ def _training_aircraft(key_suffix):
     return get_aircraft(AIRCRAFT_OPTIONS[sel]) if sel != "(none)" else None
 
 
+def _render_procedure_item(item, ac, focus_reason=None):
+    """Compact layout: numbered steps up front (punchy checklist style)."""
+    f = lambda t: training_fill(t, ac)
+    if focus_reason:
+        st.info(f"**For your flight:** {focus_reason}")
+    st.markdown(f"*{f(item['summary'])}*")
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        n = 1
+        if item.get("phases"):
+            for label, steps in item["phases"]:
+                st.markdown(f"**{label}**")
+                st.markdown("\n".join(f"{n + i}. {f(x)}" for i, x in enumerate(steps)))
+                n += len(steps)
+        else:
+            st.markdown("\n".join(f"{i}. {f(x)}" for i, x in enumerate(item["steps"], 1)))
+        if item.get("recovery"):
+            st.markdown("**Recover**")
+            st.markdown("\n".join(f"{i}. {f(x)}" for i, x in enumerate(item["recovery"], 1)))
+    with c2:
+        with st.container(border=True):
+            st.markdown("**ACS standards**")
+            st.markdown("\n".join(f"- {f(x)}" for x in item.get("standards") or []))
+        if item.get("watch"):
+            with st.container(border=True):
+                st.markdown("**Watch for**")
+                st.markdown("\n".join(f"- {f(x)}" for x in item["watch"]))
+    nums = ("Power and flap numbers are typical for the " + ac["display"] + " — your school's numbers win."
+            if training_has_numbers(ac) else
+            "Power/flap numbers show \"per POH\" for this aircraft — use your POH and school's numbers.")
+    acs = f"ACS {item['acs']}  ·  " if item.get("acs") else ""
+    st.caption(f"{acs}{nums}  ·  {item['source']}  ·  Your POH and CFI govern.")
+
+
 def _render_training_item(item, ac, focus_reason=None):
+    if "why" not in item:
+        return _render_procedure_item(item, ac, focus_reason)
     f = lambda t: training_fill(t, ac)
     if focus_reason:
         st.info(f"**For your flight:** {focus_reason}")
@@ -3162,7 +3199,7 @@ def _render_library(title, intro, items, key_suffix):
     ordered = sorted(items, key=lambda i: 0 if i["key"] == focus_key else 1)
     shown = 0
     for item in ordered:
-        hay = " ".join([item["title"], item["summary"], item["why"]] + item["steps"]).lower()
+        hay = training_all_text(item).lower()
         if q and q not in hay:
             continue
         shown += 1
