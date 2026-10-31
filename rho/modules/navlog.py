@@ -220,12 +220,11 @@ def generate_navlog(brief, aircraft=None, waypoints=None, flight_rules="VFR"):
 
     # Winds aloft — pick closest altitude bucket
     w_dir = w_spd = None
-    for bucket_alt in [3000, 6000, 9000]:
-        key = str(bucket_alt)
-        if key in winds_aloft:
-            entry = winds_aloft[key]
-            w_dir = entry.get("dir"); w_spd = entry.get("spd")
-            break
+    _alts = [k for k in winds_aloft if str(k).isdigit()]
+    if _alts:
+        _key = min(_alts, key=lambda k: abs(int(k) - (cruise_alt or 3500)))
+        entry = winds_aloft[_key]
+        w_dir = entry.get("dir"); w_spd = entry.get("spd")
 
     story = []
 
@@ -298,8 +297,15 @@ def generate_navlog(brief, aircraft=None, waypoints=None, flight_rules="VFR"):
 
     # Determine magnetic variation from origin if available
     mag_var = 0
-    if o_lat and o_lon:
-        mag_var = _mag_var(o_lat, o_lon)
+    if o_lat is not None and o_lon is not None:
+        try:
+            from rho.modules.magvar import mag_var_west
+            # Variation at the route midpoint
+            m_lat = (o_lat + d_lat) / 2 if d_lat is not None else o_lat
+            m_lon = (o_lon + d_lon) / 2 if d_lon is not None else o_lon
+            mag_var = mag_var_west(m_lat, m_lon)
+        except Exception:
+            mag_var = _mag_var(o_lat, o_lon)
 
     for leg in legs:
         lat1, lon1 = leg.get("lat1"), leg.get("lon1")

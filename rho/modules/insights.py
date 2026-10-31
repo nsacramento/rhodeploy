@@ -54,7 +54,8 @@ def get_preflight_brief(origin_icao, dest_icao, cruise_alt_ft=3500):
     origin_state = (origin_apt.get("state") or "") if origin_apt else ""
     if origin_state:
         try:
-            winds_aloft = get_winds_aloft_for_state(origin_state)
+            winds_aloft = get_winds_aloft_for_state(
+                origin_state, lat=origin_apt.get("lat"), lon=origin_apt.get("lon"))
         except Exception:
             winds_aloft = None
 

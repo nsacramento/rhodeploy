@@ -177,7 +177,14 @@ def _distance_nm(lat1, lon1, lat2, lon2):
 
 
 def _mag_var_west(lat, lon):
-    """Rough magnetic variation, degrees WEST positive (same model as navlog.py)."""
+    """Magnetic variation, degrees WEST positive — World Magnetic Model via magvar.py."""
+    try:
+        from rho.modules.magvar import mag_var_west
+        v = mag_var_west(lat, lon)
+        if v is not None:
+            return v
+    except Exception:
+        pass
     return round((lon + 80) * -0.4 + 5, 1)
 
 
@@ -324,7 +331,7 @@ def _route_strip(brief, aircraft, comms_o):
         tc = _bearing(o_lat, o_lon, d_lat, d_lon)
         if not dist:
             dist = round(_distance_nm(o_lat, o_lon, d_lat, d_lon), 1)
-    var_w = _mag_var_west(o_lat, o_lon) if have else 0
+    var_w = _mag_var_west((o_lat + d_lat) / 2, (o_lon + d_lon) / 2) if have else 0
     mc = (tc + var_w) % 360 if tc is not None else None
 
     # Winds aloft nearest cruise
@@ -368,12 +375,13 @@ def _route_strip(brief, aircraft, comms_o):
     cells = [
         ("DIST", f"{dist:.1f} nm" if isinstance(dist, (int, float)) else "—", "direct"),
         ("COURSE", f"{tc:03.0f}°T / {mc:03.0f}°M" if tc is not None else "—",
-         f"var ~{abs(var_w):.0f}°{'W' if var_w >= 0 else 'E'} — verify"),
+         f"var {abs(var_w):.0f}°{'W' if var_w >= 0 else 'E'} (WMM) — check sectional"),
         ("HEADING", f"{mh:03.0f}°M" if mh is not None else "—",
          f"WCA {wca:+.0f}°" if wa_pick else "no winds aloft"),
         ("ALTITUDE", f"{cruise:,} MSL", alt_note),
         ("TAS / GS", f"{tas:.0f} / {gs:.0f} kt",
-         f"wind {wa_pick[1].get('dir', 0):03d}@{wa_pick[1].get('spd', 0)} @ {wa_pick[0]//1000}k"
+         (f"wind {wa_pick[1]['dir']:03d}@{wa_pick[1].get('spd') or 0} @ {wa_pick[0]//1000}k"
+          if wa_pick[1].get("dir") is not None else f"wind lt & var @ {wa_pick[0]//1000}k")
          if wa_pick else "GS = TAS (no wind)"),
         ("ETE", f"{ete} min" if ete is not None else "—", "cruise GS"),
         ("FUEL", fuel_txt, fuel_note),

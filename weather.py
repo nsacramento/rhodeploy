@@ -9,6 +9,8 @@ Note: CONUS text AIRMETs were discontinued January 2025. G-AIRMETs replace them.
 """
 
 import time
+import re
+import math
 import requests
 from datetime import datetime, timezone
 
@@ -249,63 +251,125 @@ _STATE_TO_WINDS_STATION = {
 }
 
 
-def get_winds_aloft(station_id):
+def _fetch_fb_text(region="all", level="low", fcst="06"):
     """
-    Fetch winds aloft forecast for a given 3-letter station ID.
+    Fetch the FB (winds/temps aloft) TEXT product.
+    Only documented params: region, level, fcst. No 'format' (text only) and no
+    station filter — undocumented params return HTTP 400.
+    """
+    resp = requests.get(
+        f"{_BASE}/windtemp",
+        params={"region": region, "level": level, "fcst": fcst},
+        headers=_HEADERS, timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return resp.text or ""
+
+
+def _parse_fb(text):
+    """
+    Parse an FB winds aloft text product into
+        { "TPA": {"3000": "0507", "6000": "0610+13", ...}, ... }
+    Columns are right-aligned to the end of each altitude in the 'FT' header line.
+    """
+    stations = {}
+    cols = None
+    for line in (text or "").splitlines():
+        if line.startswith("FT"):
+            cols = []
+            prev_end = 3   # first column starts after the 3-char station ID
+            for m in re.finditer(r"\d{4,5}", line):
+                cols.append((m.group(), prev_end, m.end()))
+                prev_end = m.end()
+            continue
+        if not cols or len(line) < 4 or not re.match(r"^[A-Z0-9]{3} ", line):
+            continue
+        sid = line[:3]
+        vals = {}
+        for alt, a, b in cols:
+            v = line[a:b].strip() if len(line) > a else ""
+            if v:
+                vals[alt] = v
+        stations[sid] = vals
+    return stations
+
+
+def _split_fb_value(raw):
+    """'0610+13' -> ('0610', '+13'); '254243' (above FL240, temp implied negative) -> ('2542', '-43')."""
+    raw = (raw or "").strip()
+    if len(raw) == 4:
+        return raw, None
+    if len(raw) >= 6 and raw[4] in "+-":
+        return raw[:4], raw[4:]
+    if len(raw) == 6:
+        return raw[:4], "-" + raw[4:]
+    return raw[:4], None
+
+
+def _station_coords(sid):
+    """Approximate station position from OurAirports runway data (K + 3-letter ID)."""
+    try:
+        from rho.modules.airport_diagram import get_airport_layout
+        lay = get_airport_layout("K" + sid)
+        if lay:
+            return lay["lat0"], lay["lon0"]
+    except Exception:
+        pass
+    return None
+
+
+def get_winds_aloft(station_id=None, lat=None, lon=None, max_nm=150):
+    """
+    Winds aloft forecast (FB, 6-hr) for a station, or for the station nearest lat/lon.
 
     Returns a dict with decoded winds for 3k, 6k, 9k, 12k ft:
-        { "3000": {"dir": 270, "spd": 15, "temp_c": -2, "label": "270° @ 15 kt  -2°C"},
+        { "3000": {"dir": 270, "spd": 15, "temp_c": None, "label": "270° @ 15 kt"},
           "6000": {...}, "9000": {...}, "12000": {...} }
+    3000 ft has no temperature; it may be missing for high-elevation stations.
     Returns None if unavailable.
     """
     try:
-        data = _get("windtemp", {
-            "region": "all",
-            "level":  "low",
-            "site":   station_id.upper(),
-        })
+        stations = _parse_fb(_fetch_fb_text())
     except Exception:
         return None
-
-    if not data:
+    if not stations:
         return None
 
-    # API may return a list of station objects or a single object
-    if isinstance(data, list):
-        station = next(
-            (s for s in data if (s.get("stationId") or "").upper() == station_id.upper()),
-            data[0] if data else None,
-        )
-    else:
-        station = data
-
-    if not station:
+    sid = (station_id or "").upper()
+    if lat is not None and lon is not None:
+        best, best_d = None, None
+        for cand in stations:
+            c = _station_coords(cand)
+            if not c:
+                continue
+            d = math.hypot(c[0] - lat, (c[1] - lon) * math.cos(math.radians(lat))) * 60
+            if best_d is None or d < best_d:
+                best, best_d = cand, d
+        if best and best_d <= max_nm:
+            sid = best
+    if sid not in stations:
         return None
 
     result = {}
-    alt_keys = [
-        ("3000",  station.get("wind3k"),  station.get("temp3k")),
-        ("6000",  station.get("wind6k"),  station.get("temp6k")),
-        ("9000",  station.get("wind9k"),  station.get("temp9k")),
-        ("12000", station.get("wind12k"), station.get("temp12k")),
-    ]
-    for alt, wind_raw, temp_raw in alt_keys:
+    for alt in ("3000", "6000", "9000", "12000"):
+        raw = stations[sid].get(alt)
+        if not raw:
+            continue
+        wind_raw, temp_raw = _split_fb_value(raw)
         decoded = _decode_wind_aloft(wind_raw, temp_raw)
         if decoded:
+            decoded["station"] = sid
             result[alt] = decoded
-
     return result if result else None
 
 
-def get_winds_aloft_for_state(state_abbrev):
+def get_winds_aloft_for_state(state_abbrev, lat=None, lon=None):
     """
-    Convenience wrapper: look up the winds aloft station for a US state
-    and return the winds aloft dict.
+    Winds aloft near the departure: nearest FB station to lat/lon when given,
+    otherwise the state's default station.
     """
-    station = _STATE_TO_WINDS_STATION.get(state_abbrev.upper())
-    if not station:
-        return None
-    return get_winds_aloft(station)
+    station = _STATE_TO_WINDS_STATION.get((state_abbrev or "").upper())
+    return get_winds_aloft(station, lat=lat, lon=lon)
 
 
 def _decode_wind_aloft(wind_raw, temp_raw):

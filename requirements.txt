@@ -1,10 +1,13 @@
-streamlit
-supabase
-pandas
-matplotlib
-shapely
-contextily
-reportlab
-requests
-python-dotenv
-extra-streamlit-components
+# Pinned 2026-10-31 so a new upstream release can't break a deploy.
+# To upgrade: bump one package, test locally (streamlit run app.py), then deploy.
+streamlit==1.66.1
+supabase==2.33.0
+pandas==3.1.0
+matplotlib==3.11.2
+shapely==2.2.0
+contextily==1.7.1
+reportlab==5.1.0
+requests==2.34.2
+python-dotenv==1.2.4
+extra-streamlit-components==0.1.81
+pygeomag==1.1.0
