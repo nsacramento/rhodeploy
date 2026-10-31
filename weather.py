@@ -62,7 +62,8 @@ def get_metar(icao):
 
     Returns a dict with keys:
         icao, raw, temp_c, dewpoint_c, wind_dir, wind_kt,
-        visibility, altimeter, flight_category, clouds, observed_utc
+        visibility, altimeter, flight_category, clouds, observed_utc,
+        wind_gust_kt, wx_string
     Returns None if no METAR is available.
     """
     # NOTE: "mostRecent" was removed from the AWC API (Sept 2025 redevelopment);
@@ -85,6 +86,8 @@ def get_metar(icao):
         "flight_category": m.get("fltCat"),
         "clouds": m.get("clouds", []),
         "observed_utc": _epoch_to_iso(m.get("obsTime")),
+        "wind_gust_kt": m.get("wgst"),
+        "wx_string": m.get("wxString") or "",
     }
 
 

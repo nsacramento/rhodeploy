@@ -127,7 +127,10 @@ def get_preflight_brief(origin_icao, dest_icao, cruise_alt_ft=3500):
         )
 
     # ── Go/no-go ──────────────────────────────────────────────────────────────
-    recommendation, reason = _go_nogo(origin_assess, dest_assess)
+    recommendation, reason, factors = _go_nogo(
+        origin_assess, dest_assess, origin_icao, dest_icao,
+        sigmets=active_sigmets, tfrs=active_tfrs,
+    )
 
     # ── Summary ───────────────────────────────────────────────────────────────
     summary = _build_summary(
@@ -154,6 +157,7 @@ def get_preflight_brief(origin_icao, dest_icao, cruise_alt_ft=3500):
         "tfrs":           active_tfrs,
         "recommendation": recommendation,
         "reason":         reason,
+        "factors":        factors,     # [{level, type, airport, short, detail}] — why GO/CAUTION/NO-GO
         "summary":        summary,
     }
 
@@ -213,6 +217,8 @@ def _assess_wx(wx_brief, apt=None):
         "warnings":      warnings,
         "trend":         trend,
         "raw_metar":     metar.get("raw"),
+        "wind_gust_kt":  metar.get("wind_gust_kt"),
+        "wx_string":     metar.get("wx_string") or "",
         # ATIS-style fields
         "temp_c":        metar.get("temp_c"),
         "dewpoint_c":    metar.get("dewpoint_c"),
@@ -355,31 +361,153 @@ def _near_route(area_coords, lat1, lon1, lat2, lon2, pad_deg=2.5):
 
 # ── Go/no-go ──────────────────────────────────────────────────────────────────
 
-def _go_nogo(origin_assess, dest_assess):
-    """Return (recommendation, reason) string pair."""
-    no_go   = {"IFR", "LIFR"}
-    caution = {"MVFR"}
+_LEVEL_RANK = {"NO-GO": 2, "CAUTION": 1, "NOTE": 0}
 
-    if origin_assess["category"] in no_go:
-        return "NO-GO", f"Origin is {origin_assess['category']} — below VFR minimums"
-    if dest_assess["category"] in no_go:
-        return "NO-GO", f"Destination is {dest_assess['category']} — below VFR minimums"
+_COVER_WORD = {"BKN": "broken", "OVC": "overcast", "VV": "vertical visibility"}
 
-    reasons = []
-    if origin_assess["category"] in caution:
-        reasons.append("origin MVFR")
-    if dest_assess["category"] in caution:
-        reasons.append("destination MVFR")
-    if origin_assess.get("trend") == "deteriorating":
-        reasons.append("origin weather deteriorating per TAF")
-    if dest_assess.get("trend") == "deteriorating":
-        reasons.append("destination weather deteriorating per TAF")
-    if origin_assess["wind_kt"] > MAX_WIND_KT:
-        reasons.append(f"winds {origin_assess['wind_kt']} kt at origin exceed student threshold")
 
-    if reasons:
-        return "CAUTION", "; ".join(reasons)
-    return "GO", "VFR conditions at both airports, no significant hazards"
+def _ceiling_cover(clouds, ceiling_ft):
+    for layer in clouds or []:
+        if layer.get("cover") in ("BKN", "OVC", "VV") and layer.get("base") == ceiling_ft:
+            return _COVER_WORD.get(layer.get("cover"), "")
+    return ""
+
+
+def _wx_factors(wx_string):
+    """Present-weather codes from the METAR -> list of (level, type, short, detail)."""
+    out = []
+    w = (wx_string or "").upper()
+    if not w:
+        return out
+    toks = w.split()
+    if any("TS" in t and not t.startswith("VC") for t in toks):
+        out.append(("NO-GO", "Thunderstorm", "thunderstorm at the field",
+                    f"METAR reports a thunderstorm ({w}). Never fly into or near a thunderstorm — "
+                    "stay 20 nm away."))
+    elif "VCTS" in toks:
+        out.append(("CAUTION", "Thunderstorm", "thunderstorms nearby",
+                    f"Thunderstorm in the vicinity (within 10 sm) — {w}. Expect gusts, rain, "
+                    "and rapidly changing conditions."))
+    if any(t.lstrip("+-").startswith("FZ") and t.lstrip("+-") != "FZFG" for t in toks) \
+            or any(x in w for x in ("PL", "GR", "GS", "SN")):
+        out.append(("NO-GO", "Icing / frozen precip", "freezing or frozen precipitation",
+                    f"METAR reports {w}. Training aircraft are not certified for known icing."))
+    if any(t.startswith("+") and ("RA" in t or "SH" in t) for t in toks):
+        out.append(("CAUTION", "Heavy rain", "heavy rain",
+                    f"Heavy precipitation ({w}) — visibility can drop quickly."))
+    elif any(("RA" in t or "DZ" in t) and "TS" not in t for t in toks):
+        out.append(("NOTE", "Rain", "light/moderate rain",
+                    f"Precipitation reported ({w}). Watch visibility and cloud bases."))
+    if any(t in ("FG", "FZFG", "MIFG", "BCFG", "PRFG") for t in toks):
+        out.append(("CAUTION", "Fog", "fog",
+                    f"Fog reported ({w}). Fog can close an airport in minutes."))
+    elif any(t in ("BR", "HZ", "FU") for t in toks):
+        out.append(("NOTE", "Mist / haze", "mist or haze",
+                    f"{w} reported — expect reduced slant-range visibility."))
+    return out
+
+
+def _go_nogo(origin_assess, dest_assess, origin_icao="Origin", dest_icao="Destination",
+             sigmets=None, tfrs=None):
+    """
+    Return (recommendation, reason, factors).
+
+    factors: list of dicts, worst first:
+        {level: "NO-GO"|"CAUTION"|"NOTE", type, airport, short, detail}
+    NOTE items are informational and never change the recommendation.
+    """
+    factors = []
+
+    def add(level, ftype, airport, short, detail):
+        factors.append({"level": level, "type": ftype, "airport": airport,
+                        "short": short, "detail": detail})
+
+    for icao, a in ((origin_icao, origin_assess), (dest_icao, dest_assess)):
+        cat     = a.get("category") or "UNKNOWN"
+        ceil    = a.get("ceiling_ft")
+        vis     = a.get("visibility")
+        wind    = a.get("wind_kt") or 0
+        gust    = a.get("wind_gust_kt")
+        xw      = a.get("crosswind_kt")
+        cover   = _ceiling_cover(a.get("clouds"), ceil)
+        cover_s = f" ({cover})" if cover else ""
+
+        # ── Flight category: say which element drives it ────────────────────
+        if not a.get("raw_metar"):
+            add("CAUTION", "No weather", icao, "no current METAR",
+                "No current observation, so conditions here are unknown — get weather from a nearby "
+                "airport or an official briefing before going.")
+        if cat in ("IFR", "LIFR", "MVFR"):
+            level = "NO-GO" if cat in ("IFR", "LIFR") else "CAUTION"
+            found = False
+            if ceil is not None and ceil < 3000:
+                if ceil < 1000:
+                    rule = "below 1,000 ft is IFR"
+                else:
+                    rule = "1,000–3,000 ft is MVFR; VFR needs 3,000+"
+                layer = (cover.capitalize() if cover else "Ceiling") + " layer"
+                add(level, "Low ceiling", icao, f"ceiling {ceil:,} ft{cover_s} — {cat}",
+                    f"{layer} at {ceil:,} ft AGL. Ceiling {rule}.")
+                found = True
+            if vis is not None and vis < 5:
+                rule = "below 3 sm is IFR" if vis < 3 else "3–5 sm is MVFR; VFR needs 5+"
+                add(level, "Low visibility", icao, f"visibility {vis:g} sm — {cat}",
+                    f"Visibility {vis:g} statute miles. Visibility {rule}.")
+                found = True
+            if not found:
+                add(level, "Flight category", icao, f"reported {cat}",
+                    f"Station reports {cat}. Check the raw METAR for the limiting element.")
+
+        # ── Wind ─────────────────────────────────────────────────────────────
+        if wind > MAX_WIND_KT:
+            add("CAUTION", "Strong wind", icao, f"wind {wind} kt",
+                f"Surface wind {wind} kt exceeds the {MAX_WIND_KT} kt student comfort limit.")
+        if gust and (gust > MAX_WIND_KT or gust - wind >= 10):
+            add("CAUTION", "Gusts", icao, f"gusting {gust} kt",
+                f"Wind {wind} gusting {gust} kt. Add half the gust factor to approach speed; "
+                "expect a bumpy, workload-heavy landing.")
+        if xw is not None and xw > MAX_XWIND_KT:
+            add("CAUTION", "Crosswind", icao, f"crosswind ~{xw:.0f} kt",
+                f"~{xw:.0f} kt crosswind on the best runway ({a.get('best_runway')}) — above the "
+                f"{MAX_XWIND_KT} kt student threshold. Check your aircraft's demonstrated crosswind.")
+
+        # ── Present weather ───────────────────────────────────────────────────
+        for level, ftype, short, detail in _wx_factors(a.get("wx_string")):
+            add(level, ftype, icao, short, detail)
+
+        # ── Forecast trend ────────────────────────────────────────────────────
+        if a.get("trend") == "deteriorating":
+            add("CAUTION", "Forecast worsening", icao, "TAF worsening",
+                "The TAF shows conditions getting worse later in the period — check timing "
+                "against your departure and return.")
+
+        # ── Temp/dewpoint spread (fog / low cloud risk) ──────────────────────
+        tc, dc = a.get("temp_c"), a.get("dewpoint_c")
+        if tc is not None and dc is not None and (tc - dc) <= 2.0:
+            add("NOTE", "Fog risk", icao, f"temp/dew spread {round(tc - dc, 1)}°C",
+                f"Temperature and dewpoint are within {round(tc - dc, 1)}°C — air is nearly "
+                "saturated. Clouds and visibility can lower quickly, especially near sunrise/sunset.")
+
+    # ── Route-wide products ───────────────────────────────────────────────────
+    for sg in sigmets or []:
+        add("CAUTION", "SIGMET", "Route", f"SIGMET: {sg.get('hazard') or 'active'}",
+            f"SIGMET for {sg.get('hazard') or 'hazardous weather'} near the route — read the full text below.")
+    for t in tfrs or []:
+        add("NOTE", "TFR", "Route", f"TFR {t.get('notam_id', '')}".strip(),
+            "Temporary flight restriction within 30 nm of the route — check the NOTAM before flight.")
+
+    factors.sort(key=lambda f: -_LEVEL_RANK[f["level"]])
+    worst = factors[0]["level"] if factors else "NOTE"
+    if worst == "NOTE":
+        return ("GO",
+                "VFR at both airports, winds within student limits, no thunderstorms or SIGMETs near the route",
+                factors)
+
+    top = [f for f in factors if f["level"] == worst]
+    parts = [f"{f['airport']} {f['short']}" if f["airport"] != "Route" else f["short"]
+             for f in top[:3]]
+    more = f" (+{len(top) - 3} more)" if len(top) > 3 else ""
+    return worst, "; ".join(parts) + more, factors
 
 
 # ── Summary ───────────────────────────────────────────────────────────────────

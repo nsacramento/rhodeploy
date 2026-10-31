@@ -292,7 +292,20 @@ def _header(brief, aircraft, tail_number):
         ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
     ]))
     rec_tbl = _banner(f"{rec}  —  {reason}", bg=_REC_CLR.get(rec, _SLATE))
-    return [top, rec_tbl]
+    out = [top, rec_tbl]
+    why = [f for f in (brief.get("factors") or []) if f.get("level") != "NOTE"][:3]
+    if why:
+        lines = "<br/>".join(
+            f"<b>{f.get('airport', '')} · {f.get('type', '')}:</b> {f.get('detail', '')}" for f in why)
+        t = Table([[Paragraph(lines, _VAL)]], colWidths=[_W])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef3c7") if rec == "CAUTION"
+             else colors.HexColor("#fee2e2")),
+            ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        out.append(t)
+    return out
 
 
 def _route_strip(brief, aircraft, comms_o):

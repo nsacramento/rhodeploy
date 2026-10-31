@@ -1093,6 +1093,39 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
         unsafe_allow_html=True,
     )
 
+    # ── Why: each factor behind the recommendation ───────────────────────────
+    factors = brief.get("factors") or []
+    if factors:
+        lvl_clr = {"NO-GO": "#991b1b", "CAUTION": "#92400e", "NOTE": "#475569"}
+        lvl_bg  = {"NO-GO": "#fee2e2", "CAUTION": "#fef3c7", "NOTE": "#f1f5f9"}
+        rows_html = ""
+        for f in factors:
+            lv = f.get("level", "NOTE")
+            rows_html += (
+                f"<tr>"
+                f"<td style='padding:4px 6px;white-space:nowrap;vertical-align:top;'>"
+                f"<span style='background:{lvl_bg[lv]};color:{lvl_clr[lv]};font-weight:700;"
+                f"font-size:10px;padding:1px 6px;border-radius:4px;'>{lv}</span></td>"
+                f"<td style='padding:4px 6px;white-space:nowrap;vertical-align:top;font-weight:600;'>"
+                f"{f.get('type', '')}</td>"
+                f"<td style='padding:4px 6px;white-space:nowrap;vertical-align:top;color:#6b7280;'>"
+                f"{f.get('airport', '')}</td>"
+                f"<td style='padding:4px 6px;vertical-align:top;'>{f.get('detail', '')}</td>"
+                f"</tr>"
+            )
+        title = "Why" if rec != "GO" else "Worth knowing"
+        st.markdown(
+            f"<div style='border:1px solid #e2e8f0;border-radius:8px;padding:0.5rem 0.75rem;"
+            f"margin-bottom:0.75rem;background:white;'>"
+            f"<div style='font-weight:700;font-size:0.9rem;margin-bottom:0.25rem;'>{title}</div>"
+            f"<table style='width:100%;font-size:12px;border-collapse:collapse;'>{rows_html}</table>"
+            f"<div style='color:#6b7280;font-size:11px;margin-top:0.35rem;'>Student VFR minimums used: "
+            f"ceiling 3,000+ ft and visibility 5+ sm for GO; below 1,000 ft or 3 sm is NO-GO; "
+            f"wind over 15 kt or crosswind over 10 kt is CAUTION. Your CFI's personal minimums govern.</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
     # ── Runway layouts (geometry for diagrams + favored runway end) ──────────
     layouts = {}
     for _icao, _apt, _ass in [
