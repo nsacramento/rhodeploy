@@ -229,6 +229,9 @@ from rho.modules.airport_diagram import (
     get_airport_layout, pick_active_end, generate_airport_diagram_png, components_label,
 )
 from rho.modules.navlog    import generate_navlog
+from rho.modules.airspace_mins import (
+    MINIMUMS as VFR_MINIMUMS, NOTES as VFR_MIN_NOTES, generate_vfr_mins_png,
+)
 from rho.modules.training  import (
     PROCEDURES, TECHNIQUES, ITEMS as TRAINING_ITEMS, PROCEDURE_KEYS,
     fill as training_fill, recommend_for_brief, has_numbers as training_has_numbers,
@@ -1317,6 +1320,12 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
             "[FAA airport diagram](https://www.faa.gov/airports/runway_safety/diagrams/) "
             "and Chart Supplement for ground ops and pattern direction."
         )
+
+    # ── VFR weather minimums (today's check) ─────────────────────────────────
+    try:
+        _render_brief_vfr_mins(brief)
+    except Exception:
+        pass
 
     # ── Techniques for this flight ───────────────────────────────────────────
     _render_brief_techniques(brief, comms_o, comms_d, layouts)
@@ -3156,6 +3165,8 @@ def _render_procedure_item(item, ac, focus_reason=None):
 
 
 def _render_training_item(item, ac, focus_reason=None):
+    if item.get("kind") == "vfr_mins":
+        return _render_vfr_mins_reference(item, focus_reason)
     if "why" not in item:
         return _render_procedure_item(item, ac, focus_reason)
     f = lambda t: training_fill(t, ac)
@@ -3231,6 +3242,74 @@ def page_techniques():
         TECHNIQUES, "tech",
     )
 
+
+
+def _vfr_mins_table_html(highlight=None):
+    hl = set(highlight or [])
+    rows = ""
+    for r in VFR_MINIMUMS:
+        on = (not hl) or r["cls"] in hl
+        bg = "#fff7ed" if (hl and r["cls"] in hl) else "white"
+        op = "1" if on else "0.45"
+        rows += (f"<tr style='background:{bg};opacity:{op};'>"
+                 f"<td style='padding:4px 8px;font-weight:700;'>Class {r['cls']}</td>"
+                 f"<td style='padding:4px 8px;'>{r['where']}</td>"
+                 f"<td style='padding:4px 8px;font-weight:600;white-space:nowrap;'>{r['vis']}</td>"
+                 f"<td style='padding:4px 8px;'>{r['clouds']}</td></tr>")
+    return ("<table style='width:100%;font-size:12px;border-collapse:collapse;border:1px solid #e2e8f0;'>"
+            "<tr style='background:#f1f5f9;'><th style='text-align:left;padding:4px 8px;'>Airspace</th>"
+            "<th style='text-align:left;padding:4px 8px;'>Where</th>"
+            "<th style='text-align:left;padding:4px 8px;'>Visibility</th>"
+            "<th style='text-align:left;padding:4px 8px;'>Cloud clearance</th></tr>"
+            f"{rows}</table>")
+
+
+def _render_vfr_mins_reference(item, focus_reason=None):
+    if focus_reason:
+        st.info(f"**For your flight:** {focus_reason}")
+    st.markdown(f"*{item['summary']}*")
+    png = generate_vfr_mins_png()
+    if png:
+        st.image(png, use_container_width=True)
+    st.markdown(_vfr_mins_table_html(), unsafe_allow_html=True)
+    st.markdown("\n".join(f"- {n}" for n in VFR_MIN_NOTES))
+    st.caption(f"ACS {item['acs']}  ·  Source: {item['source']}  ·  The sectional and the regulations govern.")
+
+
+def _render_brief_vfr_mins(brief):
+    vm = brief.get("vfr_mins")
+    if not vm:
+        return
+    rows = vm.get("rows") or []
+    problem = any(r.get("status") != "OK" for r in rows)
+    title = "VFR Weather Minimums — today's check" + ("  ⚠" if problem else "  ✓")
+    with st.expander(title, expanded=problem):
+        stat_style = {"OK": ("#dcfce7", "#166534", "MEETS"), "TIGHT": ("#fef3c7", "#92400e", "TIGHT"),
+                      "BELOW": ("#fee2e2", "#991b1b", "BELOW")}
+        html = ("<table style='width:100%;font-size:12px;border-collapse:collapse;margin-bottom:0.5rem;'>"
+                "<tr style='background:#f1f5f9;'><th style='text-align:left;padding:4px 8px;'>Airport</th>"
+                "<th style='text-align:left;padding:4px 8px;'>Surface airspace</th>"
+                "<th style='text-align:left;padding:4px 8px;'>Reported</th>"
+                "<th style='text-align:left;padding:4px 8px;'>Status</th>"
+                "<th style='text-align:left;padding:4px 8px;'>Why</th></tr>")
+        for r in rows:
+            bg, fg, lbl = stat_style.get(r["status"], stat_style["OK"])
+            html += (f"<tr><td style='padding:4px 8px;font-weight:700;'>{r['airport']}</td>"
+                     f"<td style='padding:4px 8px;'>{r['surface']}</td>"
+                     f"<td style='padding:4px 8px;white-space:nowrap;'>{r['reported']}</td>"
+                     f"<td style='padding:4px 8px;'><span style='background:{bg};color:{fg};font-weight:700;"
+                     f"font-size:10px;padding:1px 6px;border-radius:4px;'>{lbl}</span></td>"
+                     f"<td style='padding:4px 8px;'>{r['notes']}</td></tr>")
+        st.markdown(html + "</table>", unsafe_allow_html=True)
+        png = generate_vfr_mins_png(vm.get("highlight"))
+        if png:
+            st.image(png, use_container_width=True,
+                     caption="Highlighted: airspace classes at your airports and along your route.")
+        st.markdown(_vfr_mins_table_html(vm.get("highlight")), unsafe_allow_html=True)
+        st.caption("Checks assume a 1,000 ft AGL pattern and use the reported ceiling (broken/overcast). "
+                   "Scattered layers also need clearance — look at the sky. Verify airspace on the sectional.")
+        st.button("Open the full reference →", key="vfr_mins_ref",
+                  on_click=_open_training, args=("vfr_minimums", None))
 
 def _render_brief_techniques(brief, comms_o, comms_d, layouts):
     """'Techniques for this flight' — recommendations with links into the library."""

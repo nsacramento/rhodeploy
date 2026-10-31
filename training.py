@@ -327,6 +327,23 @@ PROCEDURES = [
 
 TECHNIQUES = [
     {
+        "key": "vfr_minimums",
+        "kind": "vfr_mins",          # custom renderer: diagram + table
+        "title": "VFR Weather Minimums by Airspace",
+        "acs": "I-E",
+        "summary": "Visibility and cloud clearance for each class of airspace (14 CFR 91.155).",
+        "why": "Cloud clearance is what keeps you visible to IFR traffic descending out of the clouds — "
+               "and keeps you out of the clouds yourself.",
+        "steps": ["Class B: 3 sm, clear of clouds",
+                  "Class C, D, E below 10,000: 3 sm, 500 below, 1,000 above, 2,000 horizontal (3-152)",
+                  "Class E at/above 10,000: 5 sm, 1,000 below, 1,000 above, 1 sm horizontal",
+                  "Class G ≤ 1,200 AGL day: 1 sm, clear of clouds",
+                  "Surface areas: 1,000 ft ceiling and 3 sm to enter the pattern",
+                  "Student solo: 3 sm day, 5 sm night (61.89)"],
+        "standards": ["Explain VFR weather minimums for each class of airspace"],
+        "source": "14 CFR 91.155; 14 CFR 61.89; AIM 3-1-4",
+    },
+    {
         "key": "crosswind_takeoff",
         "title": "Crosswind Takeoff",
         "acs": "IV-G",
@@ -778,6 +795,12 @@ def recommend_for_brief(brief, comms_o=None, comms_d=None, layouts=None):
             add("inadvertent_imc", f.get("airport") or "Route",
                 f"{f.get('short', f.get('type'))} — know your escape plan", level="key"
                 if f.get("level") != "NOTE" else "standard")
+            break
+
+    # VFR weather minimums problems (pattern clearance, cruise vs ceiling)
+    for f in brief.get("factors") or []:
+        if f.get("type") == "VFR minimums":
+            add("vfr_minimums", f.get("airport") or "Route", f.get("short", "VFR minimums"), level="key")
             break
 
     # Always relevant on any landing

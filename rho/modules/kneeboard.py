@@ -741,6 +741,31 @@ def _aircraft_block(aircraft, w):
     return els
 
 
+def _vfr_mins_block(w):
+    """Compact 91.155 table for the kneeboard."""
+    rows = [
+        ("B", "3 sm", "Clear of clouds"),
+        ("C · D · E <10k", "3 sm", "500 below · 1,000 above · 2,000 horiz"),
+        ("E ≥10,000 MSL", "5 sm", "1,000 below · 1,000 above · 1 sm horiz"),
+        ("G ≤1,200 AGL day", "1 sm", "Clear of clouds"),
+        ("G >1,200 AGL day", "1 sm", "500 / 1,000 / 2,000"),
+        ("G night", "3 sm", "500 / 1,000 / 2,000"),
+        ("Surface area", "3 sm", "Ceiling ≥ 1,000 ft to enter the pattern"),
+        ("Student solo", "3 / 5 sm", "Day / night visibility (61.89)"),
+    ]
+    data = [[Paragraph("Airspace", _KEY), Paragraph("Vis", _KEY), Paragraph("Clouds", _KEY)]]
+    data += [[Paragraph(f"<b>{a}</b>", _SMALL), Paragraph(b, _SMALL), Paragraph(c, _SMALL)] for a, b, c in rows]
+    t = Table(data, colWidths=[w * 0.32, w * 0.14, w * 0.54])
+    t.setStyle(TableStyle([
+        ("TOPPADDING", (0, 0), (-1, -1), 0.8), ("BOTTOMPADDING", (0, 0), (-1, -1), 0.8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [_WHITE, _LIGHT]),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.5, _BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return [Spacer(1, 4), _banner("VFR WEATHER MINIMUMS (91.155)", bg=_PURPLE, w=w), Spacer(1, 1), t]
+
+
 def _emergency_block(w, towered):
     els = [_banner("EMERGENCY / LOST COMMS", bg=_RED, w=w), Spacer(1, 1)]
     rows = [
@@ -881,7 +906,7 @@ def generate_kneeboard(brief, comms_o, comms_d, aircraft=None,
     story.append(_banner(f"AIRPORTS  ·  {origin}  →  {dest}", bg=_NAVY,
                          right="Runways to scale · taxiways not shown — use the FAA airport diagram"))
     story.append(Spacer(1, 3))
-    dw, dh = half / inch, 2.85
+    dw, dh = half / inch, 2.55
     o_png = _diagram_png(origin, o_apt, o_ass, o_layout, o_act, dw, dh)
     d_png = _diagram_png(dest, d_apt, d_ass, d_layout, d_act, dw, dh)
 
@@ -907,8 +932,9 @@ def generate_kneeboard(brief, comms_o, comms_d, aircraft=None,
     story.append(Spacer(1, 5))
 
     towered = bool(comms_o.get("has_tower") or comms_d.get("has_tower"))
-    story.append(CondPageBreak(2.2 * inch))
-    story.append(_side_by_side(_aircraft_block(aircraft, half), _emergency_block(half, towered)))
+    story.append(CondPageBreak(2.6 * inch))
+    story.append(_side_by_side(_aircraft_block(aircraft, half) + _vfr_mins_block(half),
+                               _emergency_block(half, towered)))
     story.append(Spacer(1, 5))
 
     # Notes

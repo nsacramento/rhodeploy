@@ -128,9 +128,26 @@ def get_preflight_brief(origin_icao, dest_icao, cruise_alt_ft=3500):
         )
 
     # ── Go/no-go ──────────────────────────────────────────────────────────────
+    # ── VFR weather minimums by airspace (91.155) ─────────────────────────────
+    vfr_factors, vfr_mins = [], None
+    try:
+        from rho.modules.airspace_mins import check_vfr_minimums
+        from rho.modules.comms import get_comms
+        _partial = {
+            "origin_icao": origin_icao, "dest_icao": dest_icao, "cruise_alt_ft": cruise_alt_ft,
+            "origin_apt": origin_apt, "dest_apt": dest_apt,
+            "origin_assess": origin_assess, "dest_assess": dest_assess,
+            "airspaces": airspaces, "route": route,
+        }
+        vfr_factors, _rows, _hl = check_vfr_minimums(
+            _partial, get_comms(origin_icao), get_comms(dest_icao))
+        vfr_mins = {"rows": _rows, "highlight": sorted(_hl)}
+    except Exception:
+        vfr_factors, vfr_mins = [], None
+
     recommendation, reason, factors = _go_nogo(
         origin_assess, dest_assess, origin_icao, dest_icao,
-        sigmets=active_sigmets, tfrs=active_tfrs,
+        sigmets=active_sigmets, tfrs=active_tfrs, extra_factors=vfr_factors,
     )
 
     # ── Summary ───────────────────────────────────────────────────────────────
@@ -158,7 +175,8 @@ def get_preflight_brief(origin_icao, dest_icao, cruise_alt_ft=3500):
         "tfrs":           active_tfrs,
         "recommendation": recommendation,
         "reason":         reason,
-        "factors":        factors,     # [{level, type, airport, short, detail}] — why GO/CAUTION/NO-GO
+        "factors":        factors,
+        "vfr_mins":       vfr_mins,    # {rows, highlight} — today's weather vs 91.155 minimums     # [{level, type, airport, short, detail}] — why GO/CAUTION/NO-GO
         "summary":        summary,
     }
 
@@ -409,7 +427,7 @@ def _wx_factors(wx_string):
 
 
 def _go_nogo(origin_assess, dest_assess, origin_icao="Origin", dest_icao="Destination",
-             sigmets=None, tfrs=None):
+             sigmets=None, tfrs=None, extra_factors=None):
     """
     Return (recommendation, reason, factors).
 
@@ -497,6 +515,7 @@ def _go_nogo(origin_assess, dest_assess, origin_icao="Origin", dest_icao="Destin
         add("NOTE", "TFR", "Route", f"TFR {t.get('notam_id', '')}".strip(),
             "Temporary flight restriction within 30 nm of the route — check the NOTAM before flight.")
 
+    factors.extend(extra_factors or [])
     factors.sort(key=lambda f: -_LEVEL_RANK[f["level"]])
     worst = factors[0]["level"] if factors else "NOTE"
     if worst == "NOTE":
