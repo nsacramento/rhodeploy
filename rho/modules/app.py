@@ -229,6 +229,10 @@ from rho.modules.airport_diagram import (
     get_airport_layout, pick_active_end, generate_airport_diagram_png, components_label,
 )
 from rho.modules.navlog    import generate_navlog
+from rho.modules.training  import (
+    PROCEDURES, TECHNIQUES, ITEMS as TRAINING_ITEMS, PROCEDURE_KEYS,
+    fill as training_fill, recommend_for_brief,
+)
 from rho.modules.reports   import generate_readiness_report, generate_lesson_plan
 from rho.modules.feedback  import submit_feedback, FEEDBACK_FEATURES
 from rho.modules.flights  import (
@@ -265,6 +269,7 @@ for key, default in [
     ("user_role",             None),   # "student" | "instructor"
     ("user_name",             None),
     ("current_page",          "home"),
+    ("lib_focus",             None),     # {"key", "reason"} — technique opened from a brief
     ("last_brief",            None),
     ("pending_skills_flight", None),   # flight_id waiting for skill log after completion
     ("acs_editing_flight",    None),   # flight_id currently open in the inline ACS editor
@@ -648,21 +653,21 @@ def show_nav():
     name_display = st.session_state.user_name or st.session_state.user_email or "Pilot"
     role_display = (st.session_state.user_role or "student").capitalize()
 
+    # Top nav = flight support only. Account pages live in the account menu.
     pages = [
         ("Home",             "home"),
         ("Pre-Flight Brief", "preflight"),
         ("Flight Log",       "logbook"),
         ("ACS Skills",       "skills"),
+        ("Procedures",       "procedures"),
+        ("Techniques",       "techniques"),
         ("Tools",            "tools"),
-        ("Profile",          "profile"),
-        ("Guide",            "guide"),
-        ("Feedback",         "feedback"),
     ]
     if st.session_state.user_role == "instructor":
         pages.append(("Students", "instructor"))
 
-    # ── Top bar: brand + pilot info + sign out ────────────────────────────────
-    brand_col, info_col, signout_col = st.columns([1, 6, 1])
+    # ── Top bar: brand + pilot info + account menu ───────────────────────────
+    brand_col, info_col, acct_col = st.columns([1, 5, 2])
     with brand_col:
         st.markdown(
             "<div style='font-size:1.1rem;font-weight:800;color:#1e293b;"
@@ -676,35 +681,44 @@ def show_nav():
             f"</div>",
             unsafe_allow_html=True,
         )
-    with signout_col:
-        if st.button("Sign Out", key="signout", use_container_width=True):
-            sign_out()
-            for k in ("authenticated", "user_email", "user_role", "user_name",
-                      "last_brief", "pending_skills_flight", "instr_student_id",
-                      "aircraft_type", "aircraft_tail", "generated_invite_link",
-                      "invite_email", "feedback_ids"):
-                st.session_state[k] = False if k == "authenticated" else None
-            st.session_state.disclaimer_accepted = False
-            st.session_state.clear_auth_cookie   = True
-            st.session_state._restore_attempted  = True
-            st.rerun()
+    with acct_col:
+        with st.popover("👤  Account", use_container_width=True):
+            for _lbl, _key in (("Profile", "profile"), ("Guide", "guide"), ("Feedback", "feedback")):
+                if st.button(_lbl, key=f"acct_{_key}", use_container_width=True,
+                             type="primary" if st.session_state.current_page == _key else "secondary"):
+                    st.session_state.current_page = _key
+                    st.rerun()
+            st.divider()
+            if st.button("Sign Out", key="signout", use_container_width=True):
+                sign_out()
+                for k in ("authenticated", "user_email", "user_role", "user_name",
+                          "last_brief", "pending_skills_flight", "instr_student_id",
+                          "aircraft_type", "aircraft_tail", "generated_invite_link",
+                          "invite_email", "feedback_ids"):
+                    st.session_state[k] = False if k == "authenticated" else None
+                st.session_state.disclaimer_accepted = False
+                st.session_state.clear_auth_cookie   = True
+                st.session_state._restore_attempted  = True
+                st.rerun()
 
     # ── Nav strip — segmented control ────────────────────────────────────────
     page_labels = [label for label, _ in pages]
     page_keys   = [key   for _, key   in pages]
+    # None when on an account page (Profile / Guide / Feedback) — nothing highlighted
     current_label = next(
         (label for label, key in pages if key == st.session_state.current_page),
-        page_labels[0],
+        None,
     )
     # Key changes with current page so control always reflects programmatic nav changes
     selected = st.segmented_control(
         "nav", page_labels,
         default=current_label,
-        key=f"_nav_{current_label}",
+        key=f"_nav_{st.session_state.current_page}",
         label_visibility="collapsed",
     )
     if selected and selected != current_label:
         st.session_state.current_page = page_keys[page_labels.index(selected)]
+        st.session_state.lib_focus = None
         st.rerun()
 
     # ── Profile missing banner ────────────────────────────────────────────────
@@ -1302,6 +1316,9 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
             "[FAA airport diagram](https://www.faa.gov/airports/runway_safety/diagrams/) "
             "and Chart Supplement for ground ops and pattern direction."
         )
+
+    # ── Techniques for this flight ───────────────────────────────────────────
+    _render_brief_techniques(brief, comms_o, comms_d, layouts)
 
     # ── Winds Aloft ──────────────────────────────────────────────────────────
     winds_aloft = brief.get("winds_aloft")
@@ -3060,15 +3077,153 @@ def page_guide():
         st.markdown("True and magnetic course, wind correction, ground speed, ETE, and fuel planning "
                     "for each leg, with blank ETA/ATA columns to fill in flight.")
 
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown("**Procedures**")
+        st.markdown("Step-by-step guides for checkride maneuvers — slow flight, stalls, steep turns, "
+                    "ground reference, emergency landing and descent, spin awareness — with the ACS "
+                    "standards and V-speeds for your aircraft.")
+    with c4:
+        st.markdown("**Techniques**")
+        st.markdown("Crosswind and gusty-wind landings, short- and soft-field operations, slips, go-arounds, "
+                    "pattern entry, wake turbulence, density altitude, VFR-into-IMC, and lost procedures. "
+                    "Your brief recommends the ones today's conditions call for.")
+
     st.divider()
     st.markdown("**A few things worth knowing**")
     st.markdown(
         "Airport dropdowns load by US state — select a state first, then pick your airport from the list. "
         "Aircraft type is selected per flight at brief time, not fixed to your profile, since many students "
         "train in multiple aircraft. "
+        "Profile, this Guide, and Feedback are in the Account menu at the top right. "
         "Instructors connect to student accounts via an invite link generated in the Profile page. "
         "All weather data — METAR, TAF, SIGMET, winds aloft — is fetched live each time you generate a brief."
     )
+
+
+
+# ── Training library: Procedures + Techniques ────────────────────────────────
+
+def _open_training(key, reason=None):
+    """Callback: jump from the brief to a procedure/technique, opened and highlighted."""
+    st.session_state.current_page = "procedures" if key in PROCEDURE_KEYS else "techniques"
+    st.session_state.lib_focus = {"key": key, "reason": reason}
+
+
+def _training_aircraft(key_suffix):
+    """Aircraft selector for the library — defaults to the profile aircraft."""
+    opts = ["(none)"] + list(AIRCRAFT_OPTIONS.keys())
+    default = AIRCRAFT_DISPLAY.get(st.session_state.get("aircraft_type") or "", "(none)")
+    idx = opts.index(default) if default in opts else 0
+    sel = st.selectbox("Show speeds for", opts, index=idx, key=f"lib_ac_{key_suffix}",
+                       help="Fills V-speeds into the steps. Defaults to your profile aircraft.")
+    return get_aircraft(AIRCRAFT_OPTIONS[sel]) if sel != "(none)" else None
+
+
+def _render_training_item(item, ac, focus_reason=None):
+    f = lambda t: training_fill(t, ac)
+    if focus_reason:
+        st.info(f"**For your flight:** {focus_reason}")
+    st.markdown(f"*{f(item['summary'])}*")
+    st.markdown(f"**Why it matters** — {f(item['why'])}")
+
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st.markdown("**Setup**")
+        st.markdown("\n".join(f"- {f(x)}" for x in item.get("setup") or []))
+        st.markdown("**Procedure**")
+        st.markdown("\n".join(f"{i}. {f(x)}" for i, x in enumerate(item["steps"], 1)))
+    with c2:
+        with st.container(border=True):
+            st.markdown("**ACS standards** (Private Pilot)")
+            st.markdown("\n".join(f"- {f(x)}" for x in item.get("standards") or []))
+        with st.container(border=True):
+            st.markdown("**Common errors**")
+            st.markdown("\n".join(f"- {f(x)}" for x in item.get("errors") or []))
+    if item.get("safety"):
+        st.warning(f(item["safety"]))
+    acs = f"ACS task {item['acs']}  ·  " if item.get("acs") else ""
+    st.caption(f"{acs}Source: {item['source']}  ·  Training reference only — your POH and CFI govern.")
+
+
+def _render_library(title, intro, items, key_suffix):
+    st.header(title)
+    st.caption(intro)
+    fc1, fc2 = st.columns([2, 1])
+    with fc2:
+        ac = _training_aircraft(key_suffix)
+    with fc1:
+        q = st.text_input("Search", placeholder="e.g. stall, crosswind, flaps",
+                          key=f"lib_q_{key_suffix}").strip().lower()
+
+    focus = st.session_state.get("lib_focus") or {}
+    focus_key = focus.get("key")
+    # Focused item first
+    ordered = sorted(items, key=lambda i: 0 if i["key"] == focus_key else 1)
+    shown = 0
+    for item in ordered:
+        hay = " ".join([item["title"], item["summary"], item["why"]] + item["steps"]).lower()
+        if q and q not in hay:
+            continue
+        shown += 1
+        is_focus = item["key"] == focus_key
+        label = f"{item['title']}" + (f"  ·  ACS {item['acs']}" if item.get("acs") else "")
+        if is_focus:
+            label = "▶ " + label
+        with st.expander(label, expanded=is_focus):
+            _render_training_item(item, ac, focus.get("reason") if is_focus else None)
+    if not shown:
+        st.caption("Nothing matches that search.")
+
+
+def page_procedures():
+    _render_library(
+        "Procedures",
+        "Step-by-step guides for the maneuvers on your Private Pilot checkride — with the ACS "
+        "standards you'll be graded on. Review before a lesson; brief it with your CFI.",
+        PROCEDURES, "proc",
+    )
+
+
+def page_techniques():
+    _render_library(
+        "Techniques",
+        "Takeoff, landing, and situational techniques — crosswinds, short and soft fields, go-arounds, "
+        "pattern entries, and what to do if things go wrong. Your pre-flight brief links here when "
+        "today's conditions call for one.",
+        TECHNIQUES, "tech",
+    )
+
+
+def _render_brief_techniques(brief, comms_o, comms_d, layouts):
+    """'Techniques for this flight' — recommendations with links into the library."""
+    try:
+        recs = recommend_for_brief(brief, comms_o, comms_d, layouts)
+    except Exception:
+        recs = []
+    if not recs:
+        return
+    st.subheader("Techniques for This Flight")
+    st.caption("Based on today's wind, runways, airports, and weather. Tap to open the technique.")
+    for i, r in enumerate(recs):
+        item = TRAINING_ITEMS.get(r["key"])
+        if not item:
+            continue
+        c_txt, c_btn = st.columns([5, 1])
+        with c_txt:
+            tag = ("<span style='background:#fef3c7;color:#92400e;font-weight:700;font-size:10px;"
+                   "padding:1px 6px;border-radius:4px;'>TODAY</span>" if r["level"] == "key" else
+                   "<span style='background:#f1f5f9;color:#475569;font-weight:700;font-size:10px;"
+                   "padding:1px 6px;border-radius:4px;'>REVIEW</span>")
+            st.markdown(
+                f"{tag} &nbsp;<b>{item['title']}</b> "
+                f"<span style='color:#6b7280;'>· {r['airport']}</span><br/>"
+                f"<span style='font-size:12px;color:#374151;'>{r['reason']}</span>",
+                unsafe_allow_html=True,
+            )
+        with c_btn:
+            st.button("Open →", key=f"tech_link_{i}_{r['key']}", use_container_width=True,
+                      on_click=_open_training, args=(r["key"], f"{r['airport']}: {r['reason']}"))
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -3138,6 +3293,10 @@ def main():
         page_feedback()
     elif page == "guide":
         page_guide()
+    elif page == "procedures":
+        page_procedures()
+    elif page == "techniques":
+        page_techniques()
 
 
 if __name__ == "__main__":
