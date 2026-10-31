@@ -225,7 +225,9 @@ from rho.modules.auth       import sign_in, sign_up, sign_out, get_user_id, try_
 from rho.modules.insights   import get_preflight_brief, _derive_category, _format_sky
 from rho.modules.comms      import get_comms
 from rho.modules.kneeboard  import generate_kneeboard
-from rho.modules.cheatsheet import generate_cheatsheet
+from rho.modules.airport_diagram import (
+    get_airport_layout, pick_active_end, generate_airport_diagram_png, components_label,
+)
 from rho.modules.navlog    import generate_navlog
 from rho.modules.reports   import generate_readiness_report, generate_lesson_plan
 from rho.modules.feedback  import submit_feedback, FEEDBACK_FEATURES
@@ -949,7 +951,11 @@ def page_preflight():
                 return
 
     if st.session_state.last_brief:
-        _render_brief(**st.session_state.last_brief)
+        # Aircraft + tail come from the current selectors, so changing them after
+        # generating the brief updates the brief and the PDFs (weather doesn't change).
+        _render_brief(**{**st.session_state.last_brief,
+                         "aircraft_key": pf_aircraft_key,
+                         "tail_number":  pf_tail})
 
 
 def _route_map_image(brief):
@@ -1087,6 +1093,20 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
         unsafe_allow_html=True,
     )
 
+    # ── Runway layouts (geometry for diagrams + favored runway end) ──────────
+    layouts = {}
+    for _icao, _apt, _ass in [
+        (origin, brief.get("origin_apt"), o),
+        (dest,   brief.get("dest_apt"),   d),
+    ]:
+        try:
+            _lay = get_airport_layout(_icao, (_apt or {}).get("runways"))
+            _act = pick_active_end(_lay, _ass.get("best_runway"),
+                                   _ass.get("wind_dir"), _ass.get("wind_kt"))
+        except Exception:
+            _lay, _act = None, None
+        layouts[_icao] = (_lay, _act)
+
     # ── Airport cards ─────────────────────────────────────────────────────────
     col_o, col_d = st.columns(2)
     for col, icao, assess, comms, wx in [
@@ -1112,7 +1132,11 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
             wd, wk = assess.get("wind_dir"), assess.get("wind_kt")
             if wd is not None and wk is not None:
                 rows.append(("Winds", f"{wd:03d}&deg; @ {wk} kt"))
-            if assess.get("best_runway"):
+            _act = layouts.get(icao, (None, None))[1]
+            if _act:
+                rows.append(("Favored Runway",
+                             f"{components_label(_act, assess.get('wind_kt'))} — verify pattern direction in Chart Supplement"))
+            elif assess.get("best_runway"):
                 xw = f" ({assess['crosswind_kt']:.0f} kt XW)" if assess.get("crosswind_kt") else ""
                 rows.append(("Active Runway", f"{assess['best_runway']}{xw} — left traffic (verify A/FD)"))
             rows.append(("Sky", _decode_sky(assess.get("sky_conditions", ""))))
@@ -1134,7 +1158,9 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
 
             # Comms
             freq_parts = []
-            if comms.get("atis"):   freq_parts.append(f"ATIS {comms['atis']}")
+            if comms.get("atis"):   freq_parts.append(f"{comms.get('wx_label') or 'ATIS'} {comms['atis']}")
+            if comms.get("clearance") and comms.get("has_tower"):
+                freq_parts.append(f"CLNC {comms['clearance']}")
             if comms.get("tower"):  freq_parts.append(f"TWR {comms['tower']}")
             if comms.get("ground"): freq_parts.append(f"GND {comms['ground']}")
             if comms.get("unicom"): freq_parts.append(f"UNICOM {comms['unicom']}")
@@ -1211,6 +1237,38 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
                                 f" &nbsp;{t_from}–{t_to}{wnd}{vis}  {sky}",
                                 unsafe_allow_html=True,
                             )
+
+    # ── Airport diagrams ─────────────────────────────────────────────────────
+    with st.expander("Airport Diagrams — runways & wind", expanded=True):
+        dg_o, dg_d = st.columns(2)
+        for _col, _icao, _apt, _ass in [
+            (dg_o, origin, brief.get("origin_apt") or {}, o),
+            (dg_d, dest,   brief.get("dest_apt")   or {}, d),
+        ]:
+            with _col:
+                _lay, _act = layouts.get(_icao, (None, None))
+                _png = None
+                if _lay:
+                    _sub = []
+                    if _apt.get("name"):
+                        _sub.append(_apt["name"].title())
+                    if _apt.get("elevation_ft") is not None:
+                        _sub.append(f"Elev {_apt['elevation_ft']:,} ft")
+                    _png = generate_airport_diagram_png(
+                        _lay, _act, _ass.get("wind_dir"), _ass.get("wind_kt"),
+                        title=_icao, subtitle="  ·  ".join(_sub),
+                        width_in=4.2, height_in=4.0, dark=False,
+                    )
+                if _png:
+                    st.image(_png, use_container_width=True)
+                else:
+                    st.caption(f"Runway diagram unavailable for {_icao}.")
+        st.caption(
+            "Runways drawn to scale, true north up. Green = favored runway for the reported wind "
+            "(arrow shows takeoff/landing direction). Taxiways not shown — use the "
+            "[FAA airport diagram](https://www.faa.gov/airports/runway_safety/diagrams/) "
+            "and Chart Supplement for ground ops and pattern direction."
+        )
 
     # ── Winds Aloft ──────────────────────────────────────────────────────────
     winds_aloft = brief.get("winds_aloft")
@@ -1322,34 +1380,17 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
     # ── Downloads ─────────────────────────────────────────────────────────────
     st.divider()
     st.subheader("Flight Documents")
-    dl_c1, dl_c2, dl_c3 = st.columns(3)
+    dl_c1, dl_c2 = st.columns(2)
 
     with dl_c1:
-        st.markdown("**In-Flight Guide** — comms, headings, airspace rules, radio scripts.")
-        try:
-            cs_bytes = generate_cheatsheet(
-                brief, comms_o, comms_d,
-                aircraft=get_aircraft(aircraft_key),
-                tail_number=tail_number,
-                flight_rules="VFR",
-            )
-            st.download_button(
-                label="Download In-Flight Guide (PDF)",
-                data=cs_bytes,
-                file_name=f"inflight_{origin}_{dest}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                type="primary",
-            )
-        except Exception as e:
-            st.error(f"Could not generate guide: {e}")
-
-    with dl_c2:
-        st.markdown("**Pre-Flight Kneeboard** — full brief summary, weather, checklist.")
+        st.markdown("**Kneeboard** — 2 pages: route, frequencies in call order, weather, "
+                    "airspace, runway diagrams, radio scripts, V-speeds, emergencies.")
         try:
             kb_bytes = generate_kneeboard(
                 brief, comms_o, comms_d,
                 aircraft=get_aircraft(aircraft_key),
+                tail_number=tail_number,
+                flight_rules="VFR",
             )
             st.download_button(
                 label="Download Kneeboard (PDF)",
@@ -1357,11 +1398,12 @@ def _render_brief(brief, skill_warnings, comms_o, comms_d, aircraft_key=None, ta
                 file_name=f"kneeboard_{origin}_{dest}.pdf",
                 mime="application/pdf",
                 use_container_width=True,
+                type="primary",
             )
         except Exception as e:
-            st.caption(f"Kneeboard unavailable: {e}")
+            st.error(f"Could not generate kneeboard: {e}")
 
-    with dl_c3:
+    with dl_c2:
         st.markdown("**VFR Nav Log** — headings, WCA, GS, ETE, fuel planning.")
         try:
             nl_bytes = generate_navlog(
@@ -2938,8 +2980,8 @@ def page_guide():
          "Keeps the decision authority with you — the pilot in command — while giving you "
          "objective weather data to back it up.",
          "Rho evaluates conditions against VFR student pilot minimums and flags a recommendation: "
-         "**GO**, **CAUTION**, or **NO-GO**. Review the full brief, download your kneeboard and "
-         "in-flight guide PDFs, then make your call. "
+         "**GO**, **CAUTION**, or **NO-GO**. Review the full brief, download your kneeboard "
+         "and nav log PDFs, then make your call. "
          "Pressing GO creates an active flight record you can complete after landing. "
          "NO-GO archives the brief for your records without starting a flight."),
 
@@ -2976,14 +3018,14 @@ def page_guide():
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**Kneeboard PDF**")
-        st.markdown("Available on the brief page after generating a brief. "
-                    "One-page pre-flight summary with weather snapshot, route distance, "
-                    "V-speeds for your aircraft, pre-departure checklist, and emergency reference.")
+        st.markdown("Your one in-flight document. Page 1: route, course, altitude check, ETE and fuel, "
+                    "frequencies in the order you'll use them, weather and favored runway for both "
+                    "airports, and airspace crossings with who to call. Page 2: runway diagrams, "
+                    "radio scripts, V-speeds, emergency and lost-comms procedures.")
     with c2:
-        st.markdown("**In-Flight Guide PDF**")
-        st.markdown("Departure communications script, heading and estimated time to destination, "
-                    "airspace crossings in route order with class rules, arrival communications, "
-                    "and active weather concerns.")
+        st.markdown("**Nav Log PDF**")
+        st.markdown("True and magnetic course, wind correction, ground speed, ETE, and fuel planning "
+                    "for each leg, with blank ETA/ATA columns to fill in flight.")
 
     st.divider()
     st.markdown("**A few things worth knowing**")

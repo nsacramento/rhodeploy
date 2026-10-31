@@ -80,9 +80,9 @@ def _bearing(lat1, lon1, lat2, lon2):
 def _distance_nm(lat1, lon1, lat2, lon2):
     """Haversine distance in nm."""
     R    = 3440.1
-    lat1, lat2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)          # compute BEFORE lat1/lat2 become radians
     dlon = math.radians(lon2 - lon1)
-    dlat = math.radians(lat2 - lat1)
+    lat1, lat2 = math.radians(lat1), math.radians(lat2)
     a    = (math.sin(dlat / 2) ** 2
             + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2)
     return round(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
