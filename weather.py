@@ -65,11 +65,14 @@ def get_metar(icao):
         visibility, altimeter, flight_category, clouds, observed_utc
     Returns None if no METAR is available.
     """
-    data = _get("metar", {"ids": icao.upper(), "mostRecent": "true"})
+    # NOTE: "mostRecent" was removed from the AWC API (Sept 2025 redevelopment);
+    # undocumented params now return HTTP 400. With no "hours" param the API
+    # returns the latest report; sort defensively anyway.
+    data = _get("metar", {"ids": icao.upper()})
     if not data:
         return None
 
-    m = data[0]
+    m = max(data, key=lambda x: x.get("obsTime") or 0)
     return {
         "icao": m.get("icaoId"),
         "raw": m.get("rawOb"),
@@ -98,11 +101,11 @@ def get_taf(icao):
         visibility, clouds
     Returns None if no TAF is available.
     """
-    data = _get("taf", {"ids": icao.upper(), "mostRecent": "true"})
+    data = _get("taf", {"ids": icao.upper()})
     if not data:
         return None
 
-    t = data[0]
+    t = max(data, key=lambda x: str(x.get("issueTime") or ""))
     forecasts = []
     for f in t.get("fcsts", []):
         forecasts.append({
