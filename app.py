@@ -250,6 +250,7 @@ from rho.modules.acs import (
     ACS_TASKS, RATING_LABELS,
 )
 from rho.modules.airport import get_airports_by_state
+from rho.modules.middle_seat_ui import page_middle_seat
 from rho.modules.profile import (
     create_or_update_profile, get_profile,
     get_my_students, get_my_instructor, get_pending_invites,
@@ -529,6 +530,12 @@ def show_auth(cookie_manager):
         </div>
         """, unsafe_allow_html=True)
         st.divider()
+        if st.query_params.get("ms"):
+            st.markdown(
+                "<div style='background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.35);"
+                "border-radius:8px;padding:0.8rem 1rem;color:#fff;font-size:0.9rem;margin-bottom:0.6rem;'>"
+                "🪑 <b>You've been challenged to Middle Seat!</b> Sign in or create a free account "
+                "to accept.</div>", unsafe_allow_html=True)
         tab_in, tab_up = st.tabs(["Sign In", "Create Account"])
         with tab_in:
             with st.form("signin"):
@@ -638,6 +645,32 @@ def show_auth(cookie_manager):
                         else:
                             st.error(f"Sign-up failed: {e}")
 
+    # ── Middle Seat — guest play, no account needed ──────────────────────────
+    _gcol = st.columns([1, 2, 1])[1]
+    with _gcol:
+        st.markdown(
+            "<div style='text-align:center;color:#cfe3f7;margin-top:1.4rem;font-size:0.88rem;'>"
+            "Waiting to board? 🪑</div>", unsafe_allow_html=True)
+        if st.button("Play Middle Seat — no account needed", use_container_width=True,
+                     key="ms_guest_btn"):
+            st.session_state.ms_guest = True
+            st.rerun()
+
+
+def show_guest_middle_seat():
+    """Middle Seat for visitors who aren't signed in (vs the bot, nothing saved)."""
+    c1, c2 = st.columns([5, 2])
+    with c1:
+        st.markdown(
+            "<div style='font-size:1.1rem;font-weight:800;color:#1e293b;padding:6px 0;"
+            "letter-spacing:-0.5px;'>✈ Rho <span style='font-weight:500;color:#64748b;"
+            "font-size:0.85rem;'>· guest</span></div>", unsafe_allow_html=True)
+    with c2:
+        if st.button("Sign in / Create account", use_container_width=True, key="ms_guest_signin"):
+            st.session_state.ms_guest = False
+            st.rerun()
+    page_middle_seat(guest=True)
+
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 
@@ -666,6 +699,7 @@ def show_nav():
         ("Procedures",       "procedures"),
         ("Techniques",       "techniques"),
         ("Tools",            "tools"),
+        ("🪑 Middle Seat",    "middle_seat"),
     ]
     if st.session_state.user_role == "instructor":
         pages.append(("Students", "instructor"))
@@ -3382,8 +3416,16 @@ def main():
             pass
 
     if not st.session_state.authenticated:
+        if st.session_state.get("ms_guest"):
+            show_guest_middle_seat()
+            return
         show_auth(cookie_manager)
         return
+
+    # Middle Seat challenge link (?ms=CODE) — open the game tab after sign-in
+    if st.query_params.get("ms") and not st.session_state.get("_ms_link_seen"):
+        st.session_state._ms_link_seen = True
+        st.session_state.current_page = "middle_seat"
 
     if not st.session_state.disclaimer_accepted:
         show_disclaimer()
@@ -3413,6 +3455,8 @@ def main():
         page_procedures()
     elif page == "techniques":
         page_techniques()
+    elif page == "middle_seat":
+        page_middle_seat()
 
 
 if __name__ == "__main__":
